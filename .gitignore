@@ -1,0 +1,50 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories (remove the comment below if you use Go modules)
+# /vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Go modules
+go.mod
+go.sum
+
+# Compiled object files and cached files
+*.o
+*.a
+*.out
+*.log
+
+# Directories for Go's module cache
+pkg/
+bin/
+
+# Ignore the binary file for this project
+hr-monitor-ble-server
+
+# IDE and editor specific files
+.idea/
+.vscode/
+*.iml
+
+# MacOS-specific files
+.DS_Store
+
+# Linux-specific files
+*~
+
+# Node.js dependencies
+node_modules/

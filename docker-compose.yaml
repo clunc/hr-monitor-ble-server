@@ -1,0 +1,11 @@
+services:
+  hr-monitor-ble-server:
+    build: .
+    container_name: hr-monitor-ble-server
+    restart: unless-stopped
+    environment:
+      - ENV=production
+    network_mode: "host"
+    privileged: true
+    volumes:
+      - /var/run/dbus:/var/run/dbus

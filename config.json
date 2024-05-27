@@ -1,0 +1,5 @@
+{
+    "TargetDeviceName": "Polar H10",
+    "ScanTimeout": 60,
+    "TargetDeviceMAC": ""
+}

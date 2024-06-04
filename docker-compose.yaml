@@ -1,11 +1,42 @@
 services:
+  zookeeper:
+    image: bitnami/zookeeper:latest
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    networks:
+      - kafka-net
+
+  kafka:
+    image: bitnami/kafka:latest
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+    networks:
+      - kafka-net
+    depends_on:
+      - zookeeper
+
   hr-monitor-ble-server:
     build: .
     container_name: hr-monitor-ble-server
     restart: unless-stopped
     environment:
       - ENV=production
-    network_mode: "host"
+      - KAFKA_BROKER=kafka:9092
+    networks:
+      - kafka-net
     privileged: true
     volumes:
       - /var/run/dbus:/var/run/dbus
+
+networks:
+  kafka-net:
+    driver: bridge

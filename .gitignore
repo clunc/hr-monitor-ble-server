@@ -29,7 +29,7 @@ go.sum
 *.log
 
 # Directories for Go's module cache
-pkg/
+# pkg/
 bin/
 
 # Ignore the binary file for this project

@@ -51,10 +51,11 @@ type HeartRateMonitor struct {
     reconnectAttempts int                   // Number of reconnect attempts
     debounceDuration  time.Duration         // Duration for debouncing before reconnection attempts
     mu                sync.Mutex            // Mutex for state synchronization
-    state             ConnectionState      // Current connection state
+    state             ConnectionState       // Current connection state
     lastDisconnect    time.Time             // Timestamp of last disconnect
+    lastDataReceived  time.Time             // Timestamp of last data reception
     sessionLock       sync.Mutex            // Mutex for session management
-    peer              *bluetooth.Device    // Bluetooth device representing the connected peer
+    peer              *bluetooth.Device     // Bluetooth device representing the connected peer
     reconnectTimer    *time.Timer           // Timer for reconnecting after disconnection
 }
 
@@ -67,6 +68,7 @@ func NewHeartRateMonitor(config Config) *HeartRateMonitor {
         reconnectAttempts: 3,
         debounceDuration: 5 * time.Second,
         state:            Disconnected,
+        lastDataReceived: time.Now(),
     }
 }
 
@@ -77,275 +79,261 @@ func (hrm *HeartRateMonitor) Start() {
 
 // Stop stops monitoring heart rate.
 func (hrm *HeartRateMonitor) Stop() {
-    close(hrm.stopSignal) // Close the stop signal channel to signal the monitoring goroutine to stop
-    hrm.mu.Lock()         // Lock the mutex for state synchronization
-    hrm.setState(Disconnected) // Set the state to Disconnected
-    if hrm.peer != nil { // If there is a connected peer
-        hrm.peer.Disconnect() // Disconnect from the peer
-        hrm.peer = nil        // Set the peer reference to nil
+    close(hrm.stopSignal)
+    hrm.mu.Lock()
+    defer hrm.mu.Unlock()
+    hrm.setState(Disconnected)
+    if hrm.peer != nil {
+        hrm.peer.Disconnect()
+        hrm.peer = nil
     }
-    hrm.mu.Unlock() // Unlock the mutex
+    if hrm.reconnectTimer != nil {
+        hrm.reconnectTimer.Stop()
+    }
+    close(hrm.dataStream)
 }
 
 // Subscribe returns a channel to receive heart rate data.
 func (hrm *HeartRateMonitor) Subscribe() <-chan HeartRatePayload {
-    return hrm.dataStream // Return the data stream channel
+    return hrm.dataStream
 }
 
 // setState sets the connection state.
 func (hrm *HeartRateMonitor) setState(newState ConnectionState) {
-    hrm.state = newState // Set the connection state to the new state
-}
-
-// resetReconnectTimer resets the reconnect timer.
-func (hrm *HeartRateMonitor) resetReconnectTimer() {
-    if hrm.reconnectTimer != nil { // If there is an existing reconnect timer
-        hrm.reconnectTimer.Stop() // Stop the timer
-    }
-    hrm.reconnectTimer = time.AfterFunc(hrm.debounceDuration, func() { // Reset the timer with the debounce duration
-        hrm.mu.Lock() // Lock the mutex for state synchronization
-        defer hrm.mu.Unlock() // Ensure mutex is unlocked when the function exits
-        if hrm.state == Subscribed { // If already subscribed, no need to reconnect
-            return // Exit the function
-        }
-        hrm.setState(Disconnected) // Set the state to Disconnected
-        hrm.lastDisconnect = time.Now() // Record the timestamp of disconnection
-        if hrm.peer != nil { // If there is a connected peer
-            hrm.peer.Disconnect() // Disconnect from the peer
-            hrm.peer = nil        // Set the peer reference to nil
-        }
-        go hrm.run() // Start the monitoring routine
-    })
+    hrm.state = newState
+    log.Infof("State changed to %v", newState)
 }
 
 // monitor continuously runs the heart rate monitoring process.
 func (hrm *HeartRateMonitor) monitor() {
     for {
         select {
-        case <-hrm.stopSignal: // If stop signal received
-            return // Exit the monitoring routine
-        default: // If no stop signal received
-            hrm.run() // Run the heart rate monitoring process
-            time.Sleep(5 * time.Second) // Wait before attempting to reconnect
+        case <-hrm.stopSignal:
+            return
+        default:
+            hrm.run()
+            time.Sleep(5 * time.Second)
         }
     }
 }
 
 // run executes the heart rate monitoring process.
 func (hrm *HeartRateMonitor) run() {
-    hrm.mu.Lock() // Lock the mutex for state synchronization
-    if hrm.state != Disconnected { // If not in Disconnected state
-        hrm.mu.Unlock() // Unlock the mutex
-        return // Exit the function
+    hrm.mu.Lock()
+    if hrm.state != Disconnected {
+        hrm.mu.Unlock()
+        return
     }
-    hrm.mu.Unlock() // Unlock the mutex
+    hrm.mu.Unlock()
 
-    hrm.setState(Connecting) // Set the state to Connecting
-    device, err := hrm.scanAndConnect() // Scan for and connect to the device
-    if err != nil { // If error occurred during scanning and connecting
-        log.Errorf("Failed to scan and connect: %v", err) // Log the error
-        hrm.setState(Disconnected) // Set the state to Disconnected
-        return // Exit the function
-    }
-
-    hrm.setState(Connected) // Set the state to Connected
-    services, err := hrm.discoverServices(device) // Discover services provided by the device
-    if err != nil { // If error occurred during service discovery
-        log.Errorf("Failed to discover services: %v", err) // Log the error
-        hrm.setState(Disconnected) // Set the state to Disconnected
-        return // Exit the function
+    hrm.setState(Connecting)
+    device, err := hrm.scanAndConnect()
+    if err != nil {
+        log.Errorf("Failed to scan and connect: %v", err)
+        hrm.setState(Disconnected)
+        return
     }
 
-    characteristics, err := hrm.discoverCharacteristics(services[0]) // Discover characteristics of a service
-    if err != nil { // If error occurred during characteristic discovery
-        log.Errorf("Failed to discover characteristics: %v", err) // Log the error
-        hrm.setState(Disconnected) // Set the state to Disconnected
-        return // Exit the function
+    hrm.setState(Connected)
+    services, err := hrm.discoverServices(device)
+    if err != nil {
+        log.Errorf("Failed to discover services: %v", err)
+        hrm.setState(Disconnected)
+        return
     }
 
-    hrm.setState(Subscribing) // Set the state to Subscribing
-    err = hrm.subscribeHeartRateData(characteristics[0]) // Subscribe to heart rate data notifications
-    if err != nil { // If error occurred during subscription
-        log.Errorf("Failed to subscribe to heart rate data: %v", err) // Log the error
-        hrm.setState(Disconnected) // Set the state to Disconnected
-        return // Exit the function
+    characteristics, err := hrm.discoverCharacteristics(services[0])
+    if err != nil {
+        log.Errorf("Failed to discover characteristics: %v", err)
+        hrm.setState(Disconnected)
+        return
     }
 
-    hrm.mu.Lock() // Lock the mutex for state synchronization
-    hrm.setState(Subscribed) // Set the state to Subscribed
-    hrm.peer = device // Set the peer reference to the connected device
-    hrm.mu.Unlock() // Unlock the mutex
+    hrm.setState(Subscribing)
+    err = hrm.subscribeHeartRateData(characteristics[0])
+    if err != nil {
+        log.Errorf("Failed to subscribe to heart rate data: %v", err)
+        hrm.setState(Disconnected)
+        return
+    }
+
+    hrm.mu.Lock()
+    hrm.setState(Subscribed)
+    hrm.peer = device
+    hrm.mu.Unlock()
 }
 
 // scanAndConnect scans for devices and connects to the target device.
 func (hrm *HeartRateMonitor) scanAndConnect() (*bluetooth.Device, error) {
-    hrm.sessionLock.Lock() // Lock the sessionLock mutex
-    defer hrm.sessionLock.Unlock() // Ensure mutex is unlocked when the function exits
+    hrm.sessionLock.Lock()
+    defer hrm.sessionLock.Unlock()
 
-    adapter := bluetooth.DefaultAdapter // Get the default Bluetooth adapter
+    adapter := bluetooth.DefaultAdapter
 
-    if err := adapter.Enable(); err != nil { // Enable the Bluetooth adapter
-        return nil, wrapError(err, "enable BLE stack") // Return error if enable fails
+    if err := adapter.Enable(); err != nil {
+        return nil, wrapError(err, "enable BLE stack")
     }
 
-    ch := make(chan bluetooth.ScanResult, 1) // Create a channel to receive scan results
-    stop := make(chan struct{}) // Create a stop channel
+    ch := make(chan bluetooth.ScanResult, 1)
+    stop := make(chan struct{})
     go func() {
         err := adapter.Scan(func(adapter *bluetooth.Adapter, result bluetooth.ScanResult) {
-            log.Infof("Found device: %s (%s)", result.Address.String(), result.LocalName()) // Log the found device
-            if matchesTargetDevice(result, hrm.config) { // Check if the found device matches the target
-                ch <- result // Send the result to the channel
-                close(stop)  // Close the stop channel to stop scanning
+            log.Infof("Found device: %s (%s)", result.Address.String(), result.LocalName())
+            if matchesTargetDevice(result, hrm.config) {
+                ch <- result
+                close(stop)
             }
         })
-        if err != nil { // If scan fails
-            log.Errorf("start scan: %v", err) // Log the error
+        if err != nil {
+            log.Errorf("start scan: %v", err)
         }
     }()
 
-    var device bluetooth.ScanResult // Variable to hold the scan result
+    var device bluetooth.ScanResult
     select {
-    case device = <-ch: // If device found
-        log.Infof("Connecting to device: %s (%s)", device.Address.String(), device.LocalName()) // Log the connection attempt
-    case <-time.After(time.Duration(hrm.config.ScanTimeout) * time.Second): // If timeout occurs
-        return nil, errors.New("timeout while scanning for devices") // Return timeout error
-    case <-stop: // If stop signal received
+    case device = <-ch:
+        log.Infof("Connecting to device: %s (%s)", device.Address.String(), device.LocalName())
+    case <-time.After(time.Duration(hrm.config.ScanTimeout) * time.Second):
+        return nil, errors.New("timeout while scanning for devices")
+    case <-stop:
     }
 
-    if err := adapter.StopScan(); err != nil { // Stop scanning
-        return nil, wrapError(err, "stop scan") // Return error if stop fails
+    if err := adapter.StopScan(); err != nil {
+        return nil, wrapError(err, "stop scan")
     }
 
-    var peer *bluetooth.Device // Variable to hold the connected peer
-    for i := 0; i < hrm.reconnectAttempts; i++ { // Loop for reconnect attempts
-        p, err := adapter.Connect(device.Address, bluetooth.ConnectionParams{}) // Connect to the device
-        if err == nil { // If connection successful
-            peer = &p // Set the peer reference
-            break // Exit the loop
+    var peer *bluetooth.Device
+    for i := 0; i < hrm.reconnectAttempts; i++ {
+        p, err := adapter.Connect(device.Address, bluetooth.ConnectionParams{})
+        if err == nil {
+            peer = &p
+            break
         }
-        log.Errorf("Failed to connect to device (attempt %d/%d): %v", i+1, hrm.reconnectAttempts, err) // Log connection attempt failure
-        time.Sleep(2 * time.Second) // Wait before retrying
+        log.Errorf("Failed to connect to device (attempt %d/%d): %v", i+1, hrm.reconnectAttempts, err)
+        time.Sleep(2 * time.Second)
     }
-    if peer == nil { // If connection failed after all attempts
-        return nil, errors.New("failed to connect to device after multiple attempts") // Return connection failure error
+    if peer == nil {
+        return nil, errors.New("failed to connect to device after multiple attempts")
     }
-    log.Info("Connected to the device") // Log successful connection
-    return peer, nil // Return the connected peer
+    log.Info("Connected to the device")
+    return peer, nil
 }
 
 // discoverServices discovers services provided by the device.
 func (hrm *HeartRateMonitor) discoverServices(peer *bluetooth.Device) ([]bluetooth.DeviceService, error) {
-    log.Info("Discovering services...") // Log service discovery
-    serviceUUID := bluetooth.NewUUID(uuidToByteArray(HeartRateServiceUUID)) // Convert service UUID string to UUID
-    services, err := peer.DiscoverServices([]bluetooth.UUID{serviceUUID}) // Discover services
-    if err != nil { // If service discovery fails
-        return nil, wrapError(err, "discover services") // Return error
+    log.Info("Discovering services...")
+    serviceUUID := bluetooth.NewUUID(uuidToByteArray(HeartRateServiceUUID))
+    services, err := peer.DiscoverServices([]bluetooth.UUID{serviceUUID})
+    if err != nil {
+        return nil, wrapError(err, "discover services")
     }
-    if len(services) == 0 { // If no services found
-        return nil, errors.New("no services found") // Return no services found error
+    if len(services) == 0 {
+        return nil, errors.New("no services found")
     }
-    log.Info("Services discovered") // Log successful service discovery
-    return services, nil // Return the discovered services
+    log.Info("Services discovered")
+    return services, nil
 }
 
 // discoverCharacteristics discovers characteristics of a service.
 func (hrm *HeartRateMonitor) discoverCharacteristics(service bluetooth.DeviceService) ([]bluetooth.DeviceCharacteristic, error) {
-    log.Info("Discovering characteristics...") // Log characteristic discovery
-    characteristicUUID := bluetooth.NewUUID(uuidToByteArray(HeartRateCharacteristicUUID)) // Convert characteristic UUID string to UUID
-    characteristics, err := service.DiscoverCharacteristics([]bluetooth.UUID{characteristicUUID}) // Discover characteristics
-    if err != nil { // If characteristic discovery fails
-        return nil, wrapError(err, "discover characteristics") // Return error
+    log.Info("Discovering characteristics...")
+    characteristicUUID := bluetooth.NewUUID(uuidToByteArray(HeartRateCharacteristicUUID))
+    characteristics, err := service.DiscoverCharacteristics([]bluetooth.UUID{characteristicUUID})
+    if err != nil {
+        return nil, wrapError(err, "discover characteristics")
     }
-    if len(characteristics) == 0 { // If no characteristics found
-        return nil, errors.New("no characteristics found") // Return no characteristics found error
+    if len(characteristics) == 0 {
+        return nil, errors.New("no characteristics found")
     }
-    log.Info("Characteristics discovered") // Log successful characteristic discovery
-    return characteristics, nil // Return the discovered characteristics
+    log.Info("Characteristics discovered")
+    return characteristics, nil
 }
 
 // subscribeHeartRateData subscribes to heart rate data notifications.
 func (hrm *HeartRateMonitor) subscribeHeartRateData(characteristic bluetooth.DeviceCharacteristic) error {
-    log.Info("Subscribing to heart rate data...") // Log subscription attempt
-    err := characteristic.EnableNotifications(func(buf []byte) { // Enable notifications for heart rate data
-        if len(buf) > 0 { // If data received
-            hr := buf[1] // Extract heart rate from buffer
-            payload := HeartRatePayload{ // Create payload with heart rate and timestamp
-                HeartRate: int(hr),            // Heart rate value
-                Timestamp: time.Now().UTC(),   // Timestamp when data received
+    log.Info("Subscribing to heart rate data...")
+
+    // Create a channel to signal data reception
+    dataReceived := make(chan struct{})
+
+    // Start a goroutine to monitor the timeout
+    go func() {
+        for {
+            select {
+            case <-time.After(5 * time.Second):
+                hrm.mu.Lock()
+                if time.Since(hrm.lastDataReceived) > 5*time.Second {
+                    log.Warn("No heart rate data received for 5 seconds, reconnecting...")
+
+                    // Stop the connection (this implicitly stops notifications)
+                    if hrm.peer != nil {
+                        hrm.peer.Disconnect()
+                        hrm.peer = nil
+                    }
+
+                    hrm.setState(Disconnected)
+                    hrm.lastDisconnect = time.Now()
+                    hrm.mu.Unlock()
+
+                    // Reinitiate the connection
+                    go hrm.run()
+                    return
+                }
+                hrm.mu.Unlock()
+            case <-dataReceived:
+                // Data received, reset the timeout
+                hrm.mu.Lock()
+                hrm.lastDataReceived = time.Now()
+                hrm.mu.Unlock()
+            case <-hrm.stopSignal:
+                return
             }
-            hrm.dataStream <- payload // Send payload to data stream channel
-            log.Infof("Heart rate data sent to channel: %d bpm at %s", payload.HeartRate, payload.Timestamp) // Log data sent
-            hrm.resetReconnectTimer() // Reset reconnect timer on data reception
-        } else { // If empty notification buffer received
-            log.Warn("Received empty notification buffer") // Log warning
+        }
+    }()
+
+    err := characteristic.EnableNotifications(func(buf []byte) {
+        if len(buf) > 0 {
+            hr := buf[1]
+            payload := HeartRatePayload{
+                HeartRate: int(hr),
+                Timestamp: time.Now().UTC(),
+            }
+            hrm.dataStream <- payload
+            log.Infof("Heart rate data sent to channel: %d bpm at %s", payload.HeartRate, payload.Timestamp)
+            dataReceived <- struct{}{} // Signal data reception
+        } else {
+            log.Warn("Received empty notification buffer")
         }
     })
-    if err != nil { // If subscription fails
-        return wrapError(err, "subscribe to heart rate data") // Return error
+
+    if err != nil {
+        return wrapError(err, "subscribe to heart rate data")
     }
-    log.Info("Subscribed to heart rate data") // Log successful subscription
-
-    // Monitor connection health
-    go hrm.monitorConnection(characteristic) // Start monitoring connection health
-
-    return nil // Return no error
-}
-
-// monitorConnection continuously monitors the connection health.
-func (hrm *HeartRateMonitor) monitorConnection(characteristic bluetooth.DeviceCharacteristic) {
-    ticker := time.NewTicker(5 * time.Second) // Create a ticker for periodic checks
-    defer ticker.Stop() // Ensure ticker is stopped when function exits
-
-    for {
-        select {
-        case <-ticker.C: // On ticker tick
-            if !hrm.isDeviceConnected(characteristic) { // If device is not connected
-                log.Warn("Device disconnected, attempting to reconnect...") // Log disconnection warning
-                hrm.mu.Lock() // Lock mutex for state synchronization
-                hrm.setState(Disconnected) // Set state to Disconnected
-                hrm.lastDisconnect = time.Now() // Record disconnection timestamp
-                if hrm.peer != nil { // If there is a connected peer
-                    hrm.peer.Disconnect() // Disconnect from the peer
-                    hrm.peer = nil // Set peer reference to nil
-                }
-                hrm.mu.Unlock() // Unlock mutex
-                go hrm.run() // Start monitoring routine
-                return // Exit function
-            }
-        case <-hrm.stopSignal: // If stop signal received
-            return // Exit function
-        }
-    }
-}
-
-// isDeviceConnected checks if the device is connected.
-func (hrm *HeartRateMonitor) isDeviceConnected(characteristic bluetooth.DeviceCharacteristic) bool {
-    // Placeholder for actual connection check logic
-    // Depending on the BLE library, this might need to be replaced with the proper call
-    return hrm.state == Subscribed // Return true if state is Subscribed
+    log.Info("Subscribed to heart rate data")
+    return nil
 }
 
 // matchesTargetDevice checks if the device matches the target device name.
 func matchesTargetDevice(result bluetooth.ScanResult, config Config) bool {
-    if config.TargetDeviceName != "" { // If target device name is specified in config
-        return strings.Contains(result.LocalName(), config.TargetDeviceName) // Check if local name contains the target device name
+    if config.TargetDeviceName != "" {
+        return strings.Contains(result.LocalName(), config.TargetDeviceName)
     }
-    return true // Return true if no target device name specified
+    return true
 }
 
 // uuidToByteArray converts UUID string to byte array.
 func uuidToByteArray(uuid string) [16]byte {
-    var ba [16]byte // Initialize byte array
-    b, err := hex.DecodeString(uuid[:8] + uuid[9:13] + uuid[14:18] + uuid[19:23] + uuid[24:]) // Decode UUID string to byte slice
-    if err != nil { // If decoding fails
-        log.Errorf("Invalid UUID format: %v", err) // Log error
-        return ba // Return empty byte array
+    var ba [16]byte
+    b, err := hex.DecodeString(uuid[:8] + uuid[9:13] + uuid[14:18] + uuid[19:23] + uuid[24:])
+    if err != nil {
+        log.Errorf("Invalid UUID format: %v", err)
+        return ba
     }
-    copy(ba[:], b) // Copy byte slice to byte array
-    return ba // Return byte array
+    copy(ba[:], b)
+    return ba
 }
 
 // wrapError wraps an error with context.
 func wrapError(err error, context string) error {
-    return errors.New(context + ": " + err.Error()) // Wrap error with context and return
+    return errors.New(context + ": " + err.Error())
 }

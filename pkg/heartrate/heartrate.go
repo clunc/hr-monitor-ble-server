@@ -76,7 +76,7 @@ func (hrm *HeartRateMonitor) Start() {
 }
 
 // Stop stops monitoring heart rate.
-func (hrm *HeartRatemonitorMonitor) Stop() {
+func (hrm *HeartRateMonitor) Stop() {
     close(hrm.stopSignal) // Close the stop signal channel to signal the monitoring goroutine to stop
     hrm.mu.Lock()         // Lock the mutex for state synchronization
     hrm.setState(Disconnected) // Set the state to Disconnected

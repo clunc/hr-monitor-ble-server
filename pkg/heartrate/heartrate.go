@@ -41,6 +41,7 @@ const (
     Connected
     Subscribing
     Subscribed
+    Disconnecting
 )
 
 // HeartRateMonitor represents a heart rate monitor instance.
@@ -79,10 +80,10 @@ func (hrm *HeartRateMonitor) Start() {
 
 // Stop stops monitoring heart rate.
 func (hrm *HeartRateMonitor) Stop() {
-    close(hrm.stopSignal)
     hrm.mu.Lock()
     defer hrm.mu.Unlock()
-    hrm.setState(Disconnected)
+    hrm.setState(Disconnecting)
+    close(hrm.stopSignal)
     if hrm.peer != nil {
         hrm.peer.Disconnect()
         hrm.peer = nil
@@ -90,6 +91,7 @@ func (hrm *HeartRateMonitor) Stop() {
     if hrm.reconnectTimer != nil {
         hrm.reconnectTimer.Stop()
     }
+    hrm.setState(Disconnected)
     close(hrm.dataStream)
 }
 
@@ -112,7 +114,7 @@ func (hrm *HeartRateMonitor) monitor() {
             return
         default:
             hrm.run()
-            time.Sleep(5 * time.Second)
+            time.Sleep(hrm.debounceDuration)
         }
     }
 }
@@ -271,12 +273,11 @@ func (hrm *HeartRateMonitor) subscribeHeartRateData(characteristic bluetooth.Dev
                         hrm.peer = nil
                     }
 
-                    hrm.setState(Disconnected)
+                    hrm.setState(Disconnecting)
                     hrm.lastDisconnect = time.Now()
+                    hrm.setState(Disconnected)
                     hrm.mu.Unlock()
 
-                    // Reinitiate the connection
-                    go hrm.run()
                     return
                 }
                 hrm.mu.Unlock()

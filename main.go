@@ -7,17 +7,23 @@ import (
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
-	"hr-monitor-ble-server/heartrate"
-	"tinygo.org/x/bluetooth"
+	"hr-monitor-ble-server/pkg/heartrate"
 )
 
 func main() {
-	config, err := heartrate.LoadConfig("config.json")
-	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+	// Define the heart rate monitor configuration
+	config := heartrate.Config{
+		TargetDeviceName: "Polar H10",
+		ScanTimeout:      30,
 	}
 
-	dataStream := make(chan heartrate.HeartRatePayload, 100) // Increased buffer size
+	// Initialize the heart rate monitor
+	hrm := heartrate.NewHeartRateMonitor(config)
+	dataStream := hrm.Subscribe()
+	hrm.Start()
+	defer hrm.Stop()
+
+	// Kafka setup
 	kafkaBroker := os.Getenv("KAFKA_BROKER")
 	if kafkaBroker == "" {
 		log.Fatal("KAFKA_BROKER environment variable is not set")
@@ -31,6 +37,7 @@ func main() {
 
 	topic := "sensor_data"
 
+	// Kafka producer goroutine
 	go func() {
 		for data := range dataStream {
 			log.Printf("Received heart rate data: %d bpm at %s", data.HeartRate, data.Timestamp)
@@ -39,63 +46,7 @@ func main() {
 		log.Println("Data stream channel closed")
 	}()
 
-	var peer *bluetooth.Device
-	var characteristic bluetooth.DeviceCharacteristic
-
-	connectToDevice := func() (*bluetooth.Device, bluetooth.DeviceCharacteristic, error) {
-		if peer != nil {
-			peer.Disconnect()
-		}
-		log.Println("Scanning and connecting to BLE device...")
-		newPeer, err := heartrate.ScanAndConnect(config)
-		if err != nil {
-			return nil, bluetooth.DeviceCharacteristic{}, err
-		}
-		log.Println("Connected to BLE device")
-
-		services, err := heartrate.DiscoverServices(newPeer)
-		if err != nil {
-			return nil, bluetooth.DeviceCharacteristic{}, err
-		}
-
-		characteristics, err := heartrate.DiscoverCharacteristics(services[0])
-		if err != nil {
-			return nil, bluetooth.DeviceCharacteristic{}, err
-		}
-
-		return newPeer, characteristics[0], nil
-	}
-
-	reconnect := func() error {
-		var err error
-		peer, characteristic, err = connectToDevice()
-		if err != nil {
-			return err
-		}
-
-		return heartrate.SubscribeHeartRateData(characteristic, dataStream)
-	}
-
-	if err := reconnect(); err != nil {
-		log.Fatalf("Failed to set up initial connection: %v", err)
-	}
-
-	go func() {
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-
-		for range ticker.C {
-			if !heartrate.IsDeviceConnected(peer, characteristic) {
-				log.Println("BLE device disconnected, attempting to reconnect...")
-				if err := reconnect(); err != nil {
-					log.Printf("Reconnection failed: %v", err)
-				} else {
-					log.Println("Reconnected to BLE device")
-				}
-			}
-		}
-	}()
-
+	// Keep the main function running
 	select {}
 }
 

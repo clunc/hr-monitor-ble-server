@@ -68,5 +68,5 @@ func processMessageWithLatency(msg *kafka.Message) {
 	}
 
 	latency := receivedTime.Sub(data.Timestamp)
-	log.Printf("Message at offset %d: Latency = %s", msg.TopicPartition.Offset, latency)
+	log.Printf("Message at offset %d: HeartRate = %d, Timestamp = %s, Latency = %s", msg.TopicPartition.Offset, data.HeartRate, data.Timestamp, latency)
 }

@@ -37,6 +37,18 @@ services:
     volumes:
       - /var/run/dbus:/var/run/dbus
 
+  kafka-consumer:
+    build:
+      context: .
+      dockerfile: ./pkg/kafka/Dockerfile.consumer
+    container_name: kafka-consumer
+    restart: unless-stopped
+    environment:
+      - BROKER_ADDRESS=kafka:9092
+      - TOPIC=sensor_data
+    networks:
+      - kafka-net
+
 networks:
   kafka-net:
     driver: bridge

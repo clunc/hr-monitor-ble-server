@@ -1,0 +1,36 @@
+# Stage 1: Build stage
+FROM golang:1.17 AS builder
+
+# Set the working directory inside the container
+WORKDIR /app
+
+# Copy the Go modules files
+COPY go.mod .
+COPY go.sum .
+
+# Download dependencies
+RUN go mod download
+
+# Copy the source code into the container
+COPY . .
+
+# Build the consumer executable
+RUN go build -o bin/consumer ./pkg/kafka/consumer.go
+
+# Stage 2: Runtime stage
+FROM debian:stable-slim
+
+# Set the working directory inside the container
+WORKDIR /app
+
+# Install necessary runtime dependencies
+RUN apt-get update && apt-get install -y \
+    libc6 \
+    librdkafka-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy the consumer executable from the builder stage
+COPY --from=builder /app/bin/consumer /app/bin/
+
+# Command to run the consumer executable
+CMD ["/app/bin/consumer"]

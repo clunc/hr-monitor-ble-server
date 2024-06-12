@@ -5,7 +5,7 @@ services:
     ports:
       - "2181:2181"
     environment:
-      - ALLOW_ANONYMOUS_LOGIN=yes
+      - ALLOW_ANONYMOUS_LOGIN=${ALLOW_ANONYMOUS_LOGIN}
     networks:
       - kafka-net
 
@@ -15,10 +15,10 @@ services:
     ports:
       - "9092:9092"
     environment:
-      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
-      - ALLOW_PLAINTEXT_LISTENER=yes
-      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092
-      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=${KAFKA_ZOOKEEPER_CONNECT}
+      - ALLOW_PLAINTEXT_LISTENER=${ALLOW_PLAINTEXT_LISTENER}
+      - KAFKA_CFG_LISTENERS=${KAFKA_LISTENERS}
+      - KAFKA_CFG_ADVERTISED_LISTENERS=${KAFKA_ADVERTISED_LISTENERS}
     networks:
       - kafka-net
     depends_on:
@@ -29,8 +29,8 @@ services:
     container_name: hr-monitor-ble-server
     restart: unless-stopped
     environment:
-      - ENV=production
-      - KAFKA_BROKER=kafka:9092
+      - ENV=${ENV}
+      - KAFKA_BROKER=${BROKER_ADDRESS}
     networks:
       - kafka-net
     privileged: true
@@ -44,8 +44,8 @@ services:
     container_name: kafka-consumer
     restart: unless-stopped
     environment:
-      - BROKER_ADDRESS=kafka:9092
-      - TOPIC=sensor_data
+      - BROKER_ADDRESS=${BROKER_ADDRESS}
+      - TOPIC=${TOPIC}
     networks:
       - kafka-net
 

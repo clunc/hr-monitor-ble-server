@@ -1,25 +1,32 @@
 package main
 
 import (
-	"encoding/json"
-	"log"
-	"os"
-	"time"
-	"github.com/confluentinc/confluent-kafka-go/kafka"
+    "encoding/json"
+    "log"
+    "os"
+    "time"
+
+    "github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 type HeartRateData struct {
-	HeartRate int       `json:"heart_rate"`
-	Timestamp time.Time `json:"timestamp"`
+    HeartRate int       `json:"heart_rate"`
+    Timestamp time.Time `json:"timestamp"`
 }
 
 func main() {
-	brokerAddress := os.Getenv("BROKER_ADDRESS")
-	topic := os.Getenv("TOPIC")
+    brokerAddress := os.Getenv("BROKER_ADDRESS")
+    topic := os.Getenv("TOPIC")
 
-	if brokerAddress == "" || topic == "" {
-        log.Fatalf("BROKER_ADDRESS and TOPIC environment variables must be set")
+    if brokerAddress == "" {
+        brokerAddress = "thinkcentre-janik:9092" // Default value for testing
     }
+    if topic == "" {
+        topic = "sensor_data" // Default value for testing
+    }
+
+    log.Println("Broker Address: ", brokerAddress)
+    log.Println("Topic: ", topic)
 
     if err := ConsumeWithLatencyTracking(brokerAddress, topic); err != nil {
         log.Fatalf("Error consuming messages: %v", err)
@@ -34,6 +41,8 @@ func ConsumeWithLatencyTracking(brokerAddress, topic string) error {
         "auto.offset.reset":  "earliest",
         "enable.auto.commit": false,
     }
+
+    log.Printf("Kafka Config: %v", config)
 
     consumer, err := kafka.NewConsumer(&config)
     if err != nil {

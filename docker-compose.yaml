@@ -1,41 +1,20 @@
+version: '3.8'
 services:
-  zookeeper:
-    image: bitnami/zookeeper:latest
-    container_name: zookeeper
-    ports:
-      - "2181:2181"
-    environment:
-      - ALLOW_ANONYMOUS_LOGIN=${ALLOW_ANONYMOUS_LOGIN}
-    networks:
-      - kafka-net
-
-  kafka:
-    image: bitnami/kafka:latest
-    container_name: kafka
-    ports:
-      - "9092:9092"
-    environment:
-      - KAFKA_CFG_ZOOKEEPER_CONNECT=${KAFKA_ZOOKEEPER_CONNECT}
-      - ALLOW_PLAINTEXT_LISTENER=${ALLOW_PLAINTEXT_LISTENER}
-      - KAFKA_CFG_LISTENERS=${KAFKA_LISTENERS}
-      - KAFKA_CFG_ADVERTISED_LISTENERS=${KAFKA_ADVERTISED_LISTENERS}
-    networks:
-      - kafka-net
-    depends_on:
-      - zookeeper
-
   hr-monitor-ble-server:
-    build: .
+    build:
+      context: .
     container_name: hr-monitor-ble-server
     restart: unless-stopped
     environment:
       - ENV=${ENV}
-      - KAFKA_BROKER=${BROKER_ADDRESS}
-    networks:
-      - kafka-net
+      - KAFKA_BROKER=${KAFKA_BROKER}
     privileged: true
     volumes:
       - /var/run/dbus:/var/run/dbus
+    env_file:
+      - .env
+    networks:
+      - kafka-net
 
   kafka-consumer:
     build:
@@ -46,9 +25,10 @@ services:
     environment:
       - BROKER_ADDRESS=${BROKER_ADDRESS}
       - TOPIC=${TOPIC}
+    env_file:
+      - .env
     networks:
       - kafka-net
 
 networks:
   kafka-net:
-    driver: bridge

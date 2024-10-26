@@ -1,92 +1,97 @@
 package main
 
 import (
-	"encoding/json"
-	"log"
-	"os"
-	"time"
+    "encoding/json"
+    "log"
+    "os"
 
-	"github.com/confluentinc/confluent-kafka-go/kafka"
-	"hr-monitor-ble-server/pkg/heartrate"
+    "github.com/joho/godotenv"
+    "github.com/IBM/sarama"
+    "github.com/clunc/hr-monitor-ble-server/pkg/heartrate"
 )
 
 func main() {
-	// Define the heart rate monitor configuration
-	config := heartrate.Config{
-		TargetDeviceName: "Polar H10",
-		ScanTimeout:      30,
-	}
+    // Load environment variables from .env file
+    err := godotenv.Load(".env")
+    if err != nil {
+        log.Fatalf("Error loading .env file: %v", err)
+    }
 
-	// Initialize the heart rate monitor
-	hrm := heartrate.NewHeartRateMonitor(config)
-	dataStream := hrm.Subscribe()
-	hrm.Start()
-	defer hrm.Stop()
+    // Define the heart rate monitor configuration
+    config := heartrate.Config{
+        TargetDeviceName: "Polar H10",
+        ScanTimeout:      30,
+    }
 
-	// Kafka setup
-	kafkaBroker := os.Getenv("KAFKA_BROKER")
-	if kafkaBroker == "" {
-		log.Fatal("KAFKA_BROKER environment variable is not set")
-	}
+    // Initialize the heart rate monitor
+    hrm := heartrate.NewHeartRateMonitor(config)
+    dataStream := hrm.Subscribe()
+    hrm.Start()
+    defer hrm.Stop()
 
-	producer, err := createKafkaProducer(kafkaBroker, 5, 2*time.Second)
-	if err != nil {
-		log.Fatalf("Failed to create Kafka producer: %v", err)
-	}
-	defer producer.Close()
+    // Kafka setup
+    kafkaBroker := os.Getenv("KAFKA_BROKER")
+    if kafkaBroker == "" {
+        log.Fatal("KAFKA_BROKER environment variable is not set")
+    }
 
-	topic := "sensor_data"
+    producer, err := createKafkaProducer(kafkaBroker)
+    if err != nil {
+        log.Fatalf("Failed to create Kafka producer: %v", err)
+    }
+    defer producer.Close()
 
-	// Kafka producer goroutine
-	go func() {
-		for data := range dataStream {
-			log.Printf("Received heart rate data: %d bpm at %s", data.HeartRate, data.Timestamp)
-			sendToKafka(producer, topic, data, 3)
-		}
-		log.Println("Data stream channel closed")
-	}()
+    topic := os.Getenv("TOPIC")
+    if topic == "" {
+        log.Fatal("TOPIC environment variable is not set")
+    }
 
-	// Keep the main function running
-	select {}
+    // Kafka producer goroutine
+    go func() {
+        for data := range dataStream {
+            log.Printf("Received heart rate data: %d bpm at %s", data.HeartRate, data.Timestamp)
+            sendToKafka(producer, topic, data)
+        }
+        log.Println("Data stream channel closed")
+    }()
+
+    // Keep the main function running
+    select {}
 }
 
-func createKafkaProducer(broker string, maxRetries int, retryInterval time.Duration) (*kafka.Producer, error) {
-	var producer *kafka.Producer
-	var err error
+func createKafkaProducer(broker string) (sarama.SyncProducer, error) {
+    config := sarama.NewConfig()
+    config.Producer.Retry.Max = 5
+    config.Producer.RequiredAcks = sarama.WaitForAll
+    config.Producer.Return.Successes = true
 
-	for i := 0; i < maxRetries; i++ {
-		producer, err = kafka.NewProducer(&kafka.ConfigMap{"bootstrap.servers": broker})
-		if err == nil {
-			log.Println("Connected to Kafka")
-			return producer, nil
-		}
-		log.Printf("Failed to connect to Kafka, retrying in %v seconds...\n", retryInterval.Seconds())
-		time.Sleep(retryInterval)
-	}
-	return nil, err
+    producer, err := sarama.NewSyncProducer([]string{broker}, config)
+    if err != nil {
+        return nil, err
+    }
+
+    log.Println("Connected to Kafka")
+    return producer, nil
 }
 
-func sendToKafka(producer *kafka.Producer, topic string, data heartrate.HeartRatePayload, maxRetries int) {
-	message, err := json.Marshal(data)
-	if err != nil {
-		log.Printf("Failed to marshal data: %v", err)
-		return
-	}
+func sendToKafka(producer sarama.SyncProducer, topic string, data heartrate.HeartRatePayload) {
+    message, err := json.Marshal(data)
+    if err != nil {
+        log.Printf("Failed to marshal data: %v", err)
+        return
+    }
 
-	for i := 0; i < maxRetries; i++ {
-		err = producer.Produce(&kafka.Message{
-			TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
-			Value:          message,
-		}, nil)
+    msg := &sarama.ProducerMessage{
+        Topic: topic,
+        Value: sarama.ByteEncoder(message),
+    }
 
-		if err == nil {
-			log.Printf("Message sent to Kafka")
-			return
-		}
+    partition, offset, err := producer.SendMessage(msg)
+    if err != nil {
+        log.Printf("Failed to produce message: %v", err)
+        return
+    }
 
-		log.Printf("Failed to produce message, retrying... (%d/%d)", i+1, maxRetries)
-		time.Sleep(1 * time.Second)
-	}
-
-	log.Printf("Failed to produce message after %d retries: %v", maxRetries, err)
+    log.Printf("Message sent to Kafka partition %d, offset %d", partition, offset)
 }
+

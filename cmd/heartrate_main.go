@@ -1,8 +1,8 @@
 package main
 
 import (
-    "log"
-    "hr-monitor-ble-server/pkg/heartrate"
+    "github.com/sirupsen/logrus"
+    "github.com/clunc/hr-monitor-ble-server/pkg/heartrate"
 )
 
 func main() {
@@ -15,7 +15,7 @@ func main() {
     hrm.Start()
 
     for data := range hrm.Subscribe() {
-        log.Printf("Heart rate: %d bpm at %s", data.HeartRate, data.Timestamp)
+        logrus.Infof("Heart rate: %d bpm", data.HeartRate)
     }
 
     hrm.Stop()

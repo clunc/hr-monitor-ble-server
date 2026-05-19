@@ -16,19 +16,6 @@ services:
     networks:
       - kafka-net
 
-  kafka-consumer:
-    build:
-      context: .
-      dockerfile: ./pkg/kafka/Dockerfile.consumer
-    container_name: kafka-consumer
-    restart: unless-stopped
-    environment:
-      - BROKER_ADDRESS=${BROKER_ADDRESS}
-      - TOPIC=${TOPIC}
-    env_file:
-      - .env
-    networks:
-      - kafka-net
 
 networks:
   kafka-net:

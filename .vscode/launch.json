@@ -1,0 +1,14 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "hr-monitor-ble-server",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cmd/heartrate_main.go",
+            "env": {},
+            "asRoot": true
+        }
+    ]
+}

@@ -12,10 +12,7 @@ import (
 
 func main() {
     // Load environment variables from .env file
-    err := godotenv.Load(".env")
-    if err != nil {
-        log.Fatalf("Error loading .env file: %v", err)
-    }
+    _ = godotenv.Load(".env")
 
     // Define the heart rate monitor configuration
     config := heartrate.Config{

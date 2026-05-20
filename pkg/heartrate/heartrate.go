@@ -1,28 +1,32 @@
 package heartrate
 
 import (
+    "encoding/binary"
     "encoding/hex"
     "errors"
     "fmt"
     "slices"
     "strings"
     "sync"
+    "sync/atomic"
     "time"
 
     "github.com/sirupsen/logrus"
     "tinygo.org/x/bluetooth"
 )
 
-// HeartRatePayload represents the heart rate data along with the timestamp.
+// HeartRatePayload represents a heart rate measurement notification.
 type HeartRatePayload struct {
-    HeartRate int       `json:"heart_rate"`
-    Timestamp time.Time `json:"timestamp"`
+    HeartRate   int       `json:"heart_rate"`
+    RRIntervals []int     `json:"rr_intervals,omitempty"` // milliseconds
+    Timestamp   time.Time `json:"timestamp"`
 }
 
-// UUIDs for Heart Rate service and characteristic.
 const (
     HeartRateServiceUUID        = "0000180d-0000-1000-8000-00805f9b34fb"
     HeartRateCharacteristicUUID = "00002a37-0000-1000-8000-00805f9b34fb"
+    BatteryServiceUUID          = "0000180f-0000-1000-8000-00805f9b34fb"
+    BatteryLevelUUID            = "00002a19-0000-1000-8000-00805f9b34fb"
 )
 
 var log = logrus.StandardLogger()
@@ -73,6 +77,7 @@ type HeartRateMonitor struct {
     sessionLock       sync.Mutex
     peer              *bluetooth.Device
     reconnectTimer    *time.Timer
+    subscriptionGen   uint32 // incremented on each new subscription to invalidate stale callbacks
 }
 
 // NewHeartRateMonitor creates a new HeartRateMonitor instance.
@@ -188,6 +193,8 @@ func (hrm *HeartRateMonitor) run() {
         return
     }
 
+    hrm.readBattery(device)
+
     hrm.mu.Lock()
     if err := hrm.transition(Subscribing); err != nil {
         hrm.mu.Unlock()
@@ -222,6 +229,8 @@ func (hrm *HeartRateMonitor) scanAndConnect() (*bluetooth.Device, error) {
     if err := adapter.Enable(); err != nil {
         return nil, wrapError(err, "enable BLE stack")
     }
+
+    _ = adapter.StopScan() // clear any stale scan from a previous session
 
     log.Infof("Scanning for %s...", hrm.config.TargetDeviceName)
     ch := make(chan bluetooth.ScanResult, 1)
@@ -296,6 +305,12 @@ func (hrm *HeartRateMonitor) discoverCharacteristics(service bluetooth.DeviceSer
 
 // subscribeHeartRateData enables notifications and watches for data timeouts.
 func (hrm *HeartRateMonitor) subscribeHeartRateData(characteristic bluetooth.DeviceCharacteristic) error {
+    gen := atomic.AddUint32(&hrm.subscriptionGen, 1)
+
+    hrm.mu.Lock()
+    hrm.lastDataReceived = time.Now()
+    hrm.mu.Unlock()
+
     dataReceived := make(chan struct{}, 1)
 
     go func() {
@@ -337,14 +352,67 @@ func (hrm *HeartRateMonitor) subscribeHeartRateData(characteristic bluetooth.Dev
     }()
 
     err := characteristic.EnableNotifications(func(buf []byte) {
+        if atomic.LoadUint32(&hrm.subscriptionGen) != gen {
+            return // stale callback from a previous connection, discard
+        }
         if len(buf) < 2 {
             return
         }
-        payload := HeartRatePayload{
-            HeartRate: int(buf[1]),
-            Timestamp: time.Now().UTC(),
+
+        flags := buf[0]
+
+        // Bits 1-2: sensor contact status.
+        // 0b10 = supported but not detected → drop the reading.
+        contactBits := (flags >> 1) & 0x03
+        if contactBits == 0x02 {
+            select {
+            case dataReceived <- struct{}{}:
+            default:
+            }
+            return
         }
-        hrm.dataStream <- payload
+
+        // Bit 0: HR value format (0 = uint8, 1 = uint16).
+        offset := 1
+        var hr int
+        if flags&0x01 == 0 {
+            hr = int(buf[offset])
+            offset++
+        } else {
+            if len(buf) < offset+2 {
+                return
+            }
+            hr = int(binary.LittleEndian.Uint16(buf[offset:]))
+            offset += 2
+        }
+
+        // H10 reports contactBits=0b00 ("not supported") rather than 0b10 when the
+        // strap is removed, so 0 bpm slips through the contact check above. Drop it
+        // without updating lastDataReceived so the 5s watchdog triggers a reconnect.
+        if hr == 0 {
+            return
+        }
+
+        // Bit 3: energy expended present (skip 2 bytes).
+        if flags&0x08 != 0 {
+            offset += 2
+        }
+
+        // Bit 4: RR intervals present (each 2 bytes, units = 1/1024 s).
+        var rrIntervals []int
+        if flags&0x10 != 0 {
+            for offset+1 < len(buf) {
+                raw := int(binary.LittleEndian.Uint16(buf[offset:]))
+                rrIntervals = append(rrIntervals, raw*1000/1024)
+                offset += 2
+            }
+        }
+
+        hrm.dataStream <- HeartRatePayload{
+            HeartRate:   hr,
+            RRIntervals: rrIntervals,
+            Timestamp:   time.Now().UTC(),
+        }
         select {
         case dataReceived <- struct{}{}:
         default:
@@ -355,6 +423,42 @@ func (hrm *HeartRateMonitor) subscribeHeartRateData(characteristic bluetooth.Dev
     }
     log.Infof("Streaming heart rate from %s", hrm.config.TargetDeviceName)
     return nil
+}
+
+// readBattery reads and logs the battery level from the device.
+func (hrm *HeartRateMonitor) readBattery(device *bluetooth.Device) {
+    services, err := device.DiscoverServices([]bluetooth.UUID{
+        bluetooth.NewUUID(uuidToByteArray(BatteryServiceUUID)),
+    })
+    if err != nil {
+        log.Warnf("Battery service discovery failed: %v", err)
+        return
+    }
+    if len(services) == 0 {
+        log.Warn("Battery service not found")
+        return
+    }
+    chars, err := services[0].DiscoverCharacteristics([]bluetooth.UUID{
+        bluetooth.NewUUID(uuidToByteArray(BatteryLevelUUID)),
+    })
+    if err != nil {
+        log.Warnf("Battery characteristic discovery failed: %v", err)
+        return
+    }
+    if len(chars) == 0 {
+        log.Warn("Battery characteristic not found")
+        return
+    }
+    buf := make([]byte, 1)
+    n, err := chars[0].Read(buf)
+    if err != nil {
+        log.Warnf("Battery read failed: %v", err)
+        return
+    }
+    if n == 0 {
+        return
+    }
+    log.Infof("Battery: %d%%", buf[0])
 }
 
 // matchesTargetDevice checks if a scan result matches the configured target.

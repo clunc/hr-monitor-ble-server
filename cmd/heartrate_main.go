@@ -15,7 +15,11 @@ func main() {
     hrm.Start()
 
     for data := range hrm.Subscribe() {
-        logrus.Infof("Heart rate: %d bpm", data.HeartRate)
+        if len(data.RRIntervals) > 0 {
+            logrus.Infof("Heart rate: %d bpm | RR: %v ms", data.HeartRate, data.RRIntervals)
+        } else {
+            logrus.Infof("Heart rate: %d bpm", data.HeartRate)
+        }
     }
 
     hrm.Stop()

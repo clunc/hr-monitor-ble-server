@@ -312,10 +312,20 @@ func (hrm *HeartRateMonitor) subscribeHeartRateData(characteristic bluetooth.Dev
     hrm.mu.Unlock()
 
     dataReceived := make(chan struct{}, 1)
+    batteryTicker := time.NewTicker(60 * time.Second)
 
     go func() {
+        defer batteryTicker.Stop()
         for {
             select {
+            case <-batteryTicker.C:
+                hrm.mu.Lock()
+                device := hrm.peer
+                hrm.mu.Unlock()
+                if device != nil {
+                    hrm.readBattery(device)
+                }
+
             case <-time.After(5 * time.Second):
                 hrm.mu.Lock()
                 stale := time.Since(hrm.lastDataReceived) > 5*time.Second

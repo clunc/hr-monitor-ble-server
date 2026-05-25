@@ -5,6 +5,7 @@ import (
     "encoding/hex"
     "errors"
     "fmt"
+    "os/exec"
     "slices"
     "strings"
     "sync"
@@ -78,6 +79,7 @@ type HeartRateMonitor struct {
     peer              *bluetooth.Device
     reconnectTimer    *time.Timer
     subscriptionGen   uint32 // incremented on each new subscription to invalidate stale callbacks
+    lastDeviceAddr    string // MAC of last connected device, used to clear bluetoothd state on reconnect
 }
 
 // NewHeartRateMonitor creates a new HeartRateMonitor instance.
@@ -230,37 +232,62 @@ func (hrm *HeartRateMonitor) scanAndConnect() (*bluetooth.Device, error) {
         return nil, wrapError(err, "enable BLE stack")
     }
 
-    _ = adapter.StopScan()           // clear any stale scan from a previous session
-    time.Sleep(500 * time.Millisecond) // give BlueZ time to process the stop
+    // Remove device from bluetoothd cache to stop its background reconnect scan,
+    // which holds a discovery session and blocks our StartDiscovery call.
+    if hrm.lastDeviceAddr != "" {
+        _ = exec.Command("bluetoothctl", "remove", hrm.lastDeviceAddr).Run()
+        time.Sleep(500 * time.Millisecond)
+    }
+
+    _ = adapter.StopScan()
 
     log.Infof("Scanning for %s...", hrm.config.TargetDeviceName)
-    ch := make(chan bluetooth.ScanResult, 1)
-    scanDone := make(chan error, 1)
-    go func() {
-        scanDone <- adapter.Scan(func(adapter *bluetooth.Adapter, result bluetooth.ScanResult) {
-            if matchesTargetDevice(result, hrm.config) {
-                select {
-                case ch <- result:
-                default:
-                }
-            }
-        })
-    }()
 
     var device bluetooth.ScanResult
-    select {
-    case device = <-ch:
-        adapter.StopScan()
-        <-scanDone // wait for the goroutine to exit before proceeding
-    case err := <-scanDone:
-        if err != nil {
-            return nil, wrapError(err, "scan")
+    var found bool
+    for attempt := range 4 {
+        if attempt > 0 {
+            _ = adapter.StopScan()
+            time.Sleep(3 * time.Second)
         }
-        return nil, errors.New("scan ended without finding device")
-    case <-time.After(time.Duration(hrm.config.ScanTimeout) * time.Second):
-        adapter.StopScan()
-        <-scanDone // wait for the goroutine to exit before returning
-        return nil, errors.New("timeout while scanning for devices")
+
+        ch := make(chan bluetooth.ScanResult, 1)
+        scanDone := make(chan error, 1)
+        go func() {
+            scanDone <- adapter.Scan(func(adapter *bluetooth.Adapter, result bluetooth.ScanResult) {
+                if matchesTargetDevice(result, hrm.config) {
+                    select {
+                    case ch <- result:
+                    default:
+                    }
+                }
+            })
+        }()
+
+        select {
+        case device = <-ch:
+            adapter.StopScan()
+            <-scanDone
+            hrm.lastDeviceAddr = device.Address.String()
+            found = true
+        case err := <-scanDone:
+            if err != nil && strings.Contains(err.Error(), "already in progress") {
+                log.Warnf("BLE adapter busy, retrying... (%d/4)", attempt+1)
+                continue
+            }
+            if err != nil {
+                return nil, wrapError(err, "scan")
+            }
+            return nil, errors.New("scan ended without finding device")
+        case <-time.After(time.Duration(hrm.config.ScanTimeout) * time.Second):
+            adapter.StopScan()
+            <-scanDone
+            return nil, errors.New("timeout while scanning for devices")
+        }
+        break
+    }
+    if !found {
+        return nil, errors.New("BLE adapter busy after retries")
     }
 
     log.Infof("Connecting to %s (%s)...", device.LocalName(), device.Address.String())

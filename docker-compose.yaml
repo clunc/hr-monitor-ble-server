@@ -8,6 +8,7 @@ services:
     environment:
       - ENV=${ENV}
       - KAFKA_BROKER=${KAFKA_BROKER}
+      - TOPIC=${TOPIC}
     privileged: true
     volumes:
       - /var/run/dbus:/var/run/dbus

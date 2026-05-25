@@ -1,6 +1,7 @@
 # Stage 1: Build
-FROM golang:1.22 AS builder
+FROM golang:1.26 AS builder
 WORKDIR /app
+RUN apt-get update && apt-get install -y libbluetooth-dev libdbus-1-dev && rm -rf /var/lib/apt/lists/*
 COPY . .
 RUN go mod download
 RUN go build -o hr-monitor-ble-server .

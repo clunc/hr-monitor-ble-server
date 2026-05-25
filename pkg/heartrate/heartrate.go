@@ -230,12 +230,14 @@ func (hrm *HeartRateMonitor) scanAndConnect() (*bluetooth.Device, error) {
         return nil, wrapError(err, "enable BLE stack")
     }
 
-    _ = adapter.StopScan() // clear any stale scan from a previous session
+    _ = adapter.StopScan()           // clear any stale scan from a previous session
+    time.Sleep(500 * time.Millisecond) // give BlueZ time to process the stop
 
     log.Infof("Scanning for %s...", hrm.config.TargetDeviceName)
     ch := make(chan bluetooth.ScanResult, 1)
+    scanDone := make(chan error, 1)
     go func() {
-        err := adapter.Scan(func(adapter *bluetooth.Adapter, result bluetooth.ScanResult) {
+        scanDone <- adapter.Scan(func(adapter *bluetooth.Adapter, result bluetooth.ScanResult) {
             if matchesTargetDevice(result, hrm.config) {
                 select {
                 case ch <- result:
@@ -243,21 +245,22 @@ func (hrm *HeartRateMonitor) scanAndConnect() (*bluetooth.Device, error) {
                 }
             }
         })
-        if err != nil {
-            log.Errorf("scan error: %v", err)
-        }
     }()
 
     var device bluetooth.ScanResult
     select {
     case device = <-ch:
+        adapter.StopScan()
+        <-scanDone // wait for the goroutine to exit before proceeding
+    case err := <-scanDone:
+        if err != nil {
+            return nil, wrapError(err, "scan")
+        }
+        return nil, errors.New("scan ended without finding device")
     case <-time.After(time.Duration(hrm.config.ScanTimeout) * time.Second):
         adapter.StopScan()
+        <-scanDone // wait for the goroutine to exit before returning
         return nil, errors.New("timeout while scanning for devices")
-    }
-
-    if err := adapter.StopScan(); err != nil {
-        return nil, wrapError(err, "stop scan")
     }
 
     log.Infof("Connecting to %s (%s)...", device.LocalName(), device.Address.String())
@@ -280,14 +283,21 @@ func (hrm *HeartRateMonitor) scanAndConnect() (*bluetooth.Device, error) {
 // discoverServices discovers the heart rate service on the device.
 func (hrm *HeartRateMonitor) discoverServices(peer *bluetooth.Device) ([]bluetooth.DeviceService, error) {
     serviceUUID := bluetooth.NewUUID(uuidToByteArray(HeartRateServiceUUID))
-    services, err := peer.DiscoverServices([]bluetooth.UUID{serviceUUID})
+    var services []bluetooth.DeviceService
+    var err error
+    for i := 0; i < 3; i++ {
+        services, err = peer.DiscoverServices([]bluetooth.UUID{serviceUUID})
+        if err == nil && len(services) > 0 {
+            return services, nil
+        }
+        if i < 2 {
+            time.Sleep(2 * time.Second)
+        }
+    }
     if err != nil {
         return nil, wrapError(err, "discover services")
     }
-    if len(services) == 0 {
-        return nil, errors.New("no services found")
-    }
-    return services, nil
+    return nil, errors.New("no services found")
 }
 
 // discoverCharacteristics discovers the heart rate characteristic on the service.

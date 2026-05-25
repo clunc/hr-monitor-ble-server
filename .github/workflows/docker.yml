@@ -14,31 +14,35 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha,prefix=sha-
+      - name: Build image
+        run: |
+          IMAGE=ghcr.io/${{ github.repository }}
+          SHA_TAG=sha-$(echo ${{ github.sha }} | cut -c1-7)
 
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          docker build -t ${IMAGE}:main -t ${IMAGE}:${SHA_TAG} .
+
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF_NAME#v}
+            MINOR=$(echo $VERSION | cut -d. -f1-2)
+            docker tag ${IMAGE}:main ${IMAGE}:${VERSION}
+            docker tag ${IMAGE}:main ${IMAGE}:${MINOR}
+          fi
+
+      - name: Push image
+        run: |
+          IMAGE=ghcr.io/${{ github.repository }}
+          SHA_TAG=sha-$(echo ${{ github.sha }} | cut -c1-7)
+
+          docker push ${IMAGE}:main
+          docker push ${IMAGE}:${SHA_TAG}
+
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF_NAME#v}
+            MINOR=$(echo $VERSION | cut -d. -f1-2)
+            docker push ${IMAGE}:${VERSION}
+            docker push ${IMAGE}:${MINOR}
+          fi

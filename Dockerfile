@@ -3,7 +3,7 @@ FROM golang:1.26 AS builder
 WORKDIR /app
 COPY . .
 RUN go mod download
-RUN CGO_ENABLED=0 go build -o hr-monitor-ble-server .
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o hr-monitor-ble-server .
 
 # Stage 2: Runtime
 FROM scratch

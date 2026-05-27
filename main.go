@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/IBM/sarama"
 	"github.com/clunc/hr-monitor-ble-server/pkg/heartrate"
@@ -25,6 +27,14 @@ func main() {
 	dataStream := hrm.Subscribe()
 	hrm.Start()
 	defer hrm.Stop()
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT)
+	go func() {
+		<-sig
+		hrm.Stop()
+		os.Exit(0)
+	}()
 
 	kafkaBroker := os.Getenv("KAFKA_BROKER")
 	if kafkaBroker == "" {

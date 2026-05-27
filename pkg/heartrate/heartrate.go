@@ -80,6 +80,7 @@ type HeartRateMonitor struct {
     reconnectTimer    *time.Timer
     subscriptionGen   uint32 // incremented on each new subscription to invalidate stale callbacks
     lastDeviceAddr    string // MAC of last connected device, used to clear bluetoothd state on reconnect
+    activeChar        *bluetooth.DeviceCharacteristic
 }
 
 // NewHeartRateMonitor creates a new HeartRateMonitor instance.
@@ -108,6 +109,10 @@ func (hrm *HeartRateMonitor) Stop() {
         return
     }
     close(hrm.stopSignal)
+    if hrm.activeChar != nil {
+        hrm.activeChar.EnableNotifications(nil)
+        hrm.activeChar = nil
+    }
     if hrm.peer != nil {
         hrm.peer.Disconnect()
         hrm.peer = nil
@@ -175,6 +180,12 @@ func (hrm *HeartRateMonitor) run() {
     hrm.mu.Unlock()
 
     disconnect := func() {
+        hrm.mu.Lock()
+        if hrm.activeChar != nil {
+            hrm.activeChar.EnableNotifications(nil)
+            hrm.activeChar = nil
+        }
+        hrm.mu.Unlock()
         device.Disconnect()
         hrm.mu.Lock()
         hrm.transition(Disconnected)
@@ -218,6 +229,7 @@ func (hrm *HeartRateMonitor) run() {
         return
     }
     hrm.peer = device
+    hrm.activeChar = &characteristics[0]
     hrm.mu.Unlock()
 }
 
@@ -374,6 +386,10 @@ func (hrm *HeartRateMonitor) subscribeHeartRateData(characteristic bluetooth.Dev
 
                 log.Warn("No data received for 5s, reconnecting...")
                 hrm.mu.Lock()
+                if hrm.activeChar != nil {
+                    hrm.activeChar.EnableNotifications(nil)
+                    hrm.activeChar = nil
+                }
                 if hrm.peer != nil {
                     hrm.peer.Disconnect()
                     hrm.peer = nil

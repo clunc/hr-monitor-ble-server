@@ -510,6 +510,9 @@ func (hrm *HeartRateMonitor) readBattery(device *bluetooth.Device) {
 
 // matchesTargetDevice checks if a scan result matches the configured target.
 func matchesTargetDevice(result bluetooth.ScanResult, config Config) bool {
+    if config.TargetDeviceMAC != "" && !strings.EqualFold(result.Address.String(), config.TargetDeviceMAC) {
+        return false
+    }
     if config.TargetDeviceName != "" {
         return strings.Contains(result.LocalName(), config.TargetDeviceName)
     }

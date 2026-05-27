@@ -17,6 +17,7 @@ func main() {
 
 	config := heartrate.Config{
 		TargetDeviceName: "Polar H10",
+		TargetDeviceMAC:  os.Getenv("TARGET_MAC"),
 		ScanTimeout:      30,
 	}
 

@@ -9,6 +9,7 @@ services:
       - ENV=${ENV}
       - KAFKA_BROKER=${KAFKA_BROKER}
       - TOPIC=${TOPIC}
+      - TARGET_MAC=${TARGET_MAC}
     privileged: true
     volumes:
       - /var/run/dbus:/var/run/dbus

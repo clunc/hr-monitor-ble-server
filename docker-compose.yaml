@@ -1,10 +1,68 @@
-version: '3.8'
 services:
+  redpanda:
+    image: redpandadata/redpanda:v26.1.8
+    container_name: redpanda
+    command:
+      - redpanda
+      - start
+      - --smp 1
+      - --memory 512M
+      - --overprovisioned
+      - --node-id 0
+      - --kafka-addr PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr PLAINTEXT://redpanda:9092
+      - --schema-registry-addr PLAINTEXT://0.0.0.0:8081
+      - --pandaproxy-addr PLAINTEXT://0.0.0.0:8082
+      - --advertise-pandaproxy-addr PLAINTEXT://redpanda:8082
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "info", "--brokers", "localhost:9092"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - kafka-net
+
+  redpanda-init:
+    image: redpandadata/redpanda:v26.1.8
+    container_name: redpanda-init
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    entrypoint: >
+      rpk topic create ${TOPIC}
+        --brokers redpanda:9092
+        --partitions 1
+        --replicas 1
+    restart: "no"
+    networks:
+      - kafka-net
+
+  redpanda-console:
+    image: redpandadata/console:v3.7.4
+    container_name: redpanda-console
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+      KAFKA_SCHEMAREGISTRY_ENABLED: "true"
+      KAFKA_SCHEMAREGISTRY_URLS: http://redpanda:8081
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    networks:
+      - kafka-net
+
   hr-monitor-ble-server:
     build:
       context: .
     container_name: hr-monitor-ble-server
     restart: unless-stopped
+    depends_on:
+      redpanda:
+        condition: service_healthy
     environment:
       - ENV=${ENV}
       - KAFKA_BROKER=${KAFKA_BROKER}

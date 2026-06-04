@@ -4,8 +4,8 @@ go 1.26.2
 
 require (
 	github.com/IBM/sarama v1.49.0
-	github.com/joho/godotenv v1.5.1
 	github.com/sirupsen/logrus v1.9.4
+	google.golang.org/protobuf v1.36.11
 	tinygo.org/x/bluetooth v0.15.0
 )
 

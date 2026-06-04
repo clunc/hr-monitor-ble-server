@@ -1,26 +1,26 @@
 package main
 
 import (
-    "github.com/sirupsen/logrus"
-    "github.com/clunc/hr-monitor-ble-server/pkg/heartrate"
+	"github.com/clunc/hr-monitor-ble-server/pkg/heartrate"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
-    config := heartrate.Config{
-        TargetDeviceName: "Polar H10",
-        ScanTimeout:      30,
-    }
+	config := heartrate.Config{
+		TargetDeviceName: "Polar H10",
+		ScanTimeout:      30,
+	}
 
-    hrm := heartrate.NewHeartRateMonitor(config)
-    hrm.Start()
+	hrm := heartrate.NewHeartRateMonitor(config)
+	hrm.Start()
 
-    for data := range hrm.Subscribe() {
-        if len(data.RRIntervals) > 0 {
-            logrus.Infof("Heart rate: %d bpm | RR: %v ms", data.HeartRate, data.RRIntervals)
-        } else {
-            logrus.Infof("Heart rate: %d bpm", data.HeartRate)
-        }
-    }
+	for data := range hrm.Subscribe() {
+		if len(data.GetRrIntervals()) > 0 {
+			logrus.Infof("Heart rate: %d bpm | RR: %v ms", data.GetHeartRate(), data.GetRrIntervals())
+		} else {
+			logrus.Infof("Heart rate: %d bpm", data.GetHeartRate())
+		}
+	}
 
-    hrm.Stop()
+	hrm.Stop()
 }

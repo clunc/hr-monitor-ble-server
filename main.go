@@ -1,14 +1,15 @@
 package main
 
 import (
-	"encoding/json"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/IBM/sarama"
 	"github.com/clunc/hr-monitor-ble-server/pkg/heartrate"
+	"github.com/clunc/hr-monitor-ble-server/pkg/heartratepb"
 	"github.com/sirupsen/logrus"
+	"google.golang.org/protobuf/proto"
 )
 
 func main() {
@@ -54,10 +55,10 @@ func main() {
 	logrus.Infof("Connected to Kafka broker %s, publishing to topic %s", kafkaBroker, topic)
 
 	for data := range dataStream {
-		if len(data.RRIntervals) > 0 {
-			logrus.Infof("Heart rate: %d bpm | RR: %v ms", data.HeartRate, data.RRIntervals)
+		if len(data.GetRrIntervals()) > 0 {
+			logrus.Infof("Heart rate: %d bpm | RR: %v ms", data.GetHeartRate(), data.GetRrIntervals())
 		} else {
-			logrus.Infof("Heart rate: %d bpm", data.HeartRate)
+			logrus.Infof("Heart rate: %d bpm", data.GetHeartRate())
 		}
 		sendToKafka(producer, topic, data)
 	}
@@ -72,10 +73,10 @@ func createKafkaProducer(broker string) (sarama.SyncProducer, error) {
 	return sarama.NewSyncProducer([]string{broker}, config)
 }
 
-func sendToKafka(producer sarama.SyncProducer, topic string, data heartrate.HeartRatePayload) {
-	message, err := json.Marshal(data)
+func sendToKafka(producer sarama.SyncProducer, topic string, data *heartratepb.HeartRateMeasurement) {
+	message, err := proto.Marshal(data)
 	if err != nil {
-		logrus.Errorf("Failed to marshal payload: %v", err)
+		logrus.Errorf("Failed to marshal measurement: %v", err)
 		return
 	}
 

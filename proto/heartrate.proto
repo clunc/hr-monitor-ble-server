@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package heartrate.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/clunc/hr-monitor-ble-server/pkg/heartratepb;heartratepb";
+
+// HeartRateMeasurement is a single heart rate notification, mirroring the
+// BLE Heart Rate Measurement characteristic (GATT 0x2A37).
+message HeartRateMeasurement {
+  // Instantaneous heart rate in beats per minute.
+  uint32 heart_rate = 1;
+
+  // RR intervals between heartbeats, in milliseconds. May be empty.
+  repeated uint32 rr_intervals = 2;
+
+  // Time the measurement was received by the server (UTC).
+  google.protobuf.Timestamp timestamp = 3;
+}

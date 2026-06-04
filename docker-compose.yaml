@@ -46,9 +46,10 @@ services:
       redpanda:
         condition: service_healthy
     environment:
-      KAFKA_BROKERS: redpanda:9092
-      KAFKA_SCHEMAREGISTRY_ENABLED: "true"
-      KAFKA_SCHEMAREGISTRY_URLS: http://redpanda:8081
+      CONFIG_FILEPATH: /etc/console/config.yaml
+    volumes:
+      - ./console-config.yaml:/etc/console/config.yaml:ro
+      - ./proto:/etc/protos:ro
     ports:
       - "8080:8080"
     restart: unless-stopped

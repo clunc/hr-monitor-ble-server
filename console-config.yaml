@@ -1,0 +1,17 @@
+kafka:
+  brokers:
+    - redpanda:9092
+
+serde:
+  protobuf:
+    enabled: true
+    # Map the topic's value bytes to the generated protobuf message type.
+    mappings:
+      - topicName: heartrate
+        valueProtoType: heartrate.v1.HeartRateMeasurement
+    # Load .proto definitions mounted from the repo's proto/ directory.
+    fileSystem:
+      enabled: true
+      refreshInterval: 1m
+      paths:
+        - /etc/protos

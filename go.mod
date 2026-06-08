@@ -4,6 +4,7 @@ go 1.26.2
 
 require (
 	github.com/IBM/sarama v1.49.0
+	github.com/godbus/dbus/v5 v5.1.0
 	github.com/sirupsen/logrus v1.9.4
 	google.golang.org/protobuf v1.36.11
 	tinygo.org/x/bluetooth v0.15.0
@@ -14,7 +15,6 @@ require (
 	github.com/eapache/go-resiliency v1.7.0 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
-	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
 	github.com/jcmturner/aescts/v2 v2.0.0 // indirect
 	github.com/jcmturner/dnsutils/v2 v2.0.0 // indirect

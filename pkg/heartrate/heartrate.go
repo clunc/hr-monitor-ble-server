@@ -96,6 +96,7 @@ type HeartRateMonitor struct {
 	lastHR      uint32
 	lastHRAt    time.Time
 	battery     uint8
+	source      string
 	lastErr     string
 	seen        map[string]seenDevice
 }
@@ -111,6 +112,7 @@ type seenDevice struct {
 // Status is the control API's view of the gateway.
 type Status struct {
 	Link      string  `json:"link"` // idle | scanning | connected
+	Source    string  `json:"source,omitempty"`
 	State     string  `json:"state"`
 	Desired   bool    `json:"desired"`
 	Adapter   string  `json:"adapter"`
@@ -161,6 +163,14 @@ func NewHeartRateMonitor(config Config) *HeartRateMonitor {
 // the clock drains it and keeps it out of reach of a watch or phone.
 func (hrm *HeartRateMonitor) Start() {
 	go hrm.monitor()
+}
+
+// SetSource labels this gateway's strap, matching what it stamps on published
+// measurements, so peers can be told apart in a combined view.
+func (hrm *HeartRateMonitor) SetSource(s string) {
+	hrm.mu.Lock()
+	hrm.source = s
+	hrm.mu.Unlock()
 }
 
 // Connect asks the gateway to acquire and hold a link. Optional name/mac
@@ -223,6 +233,7 @@ func (hrm *HeartRateMonitor) Status() Status {
 	defer hrm.mu.Unlock()
 	st := Status{
 		State:     hrm.state.String(),
+		Source:    hrm.source,
 		Desired:   hrm.desired.Load(),
 		Adapter:   hrm.adapterID,
 		Target:    hrm.config.TargetDeviceName,

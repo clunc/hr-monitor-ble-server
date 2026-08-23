@@ -18,18 +18,28 @@ jobs:
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Build image
+      # Two binaries, two images. Dockerfile builds the repo root: the gateway
+      # with the Kafka producer, the control API and its page — the one the
+      # rowing platform deploys. Dockerfile.k8s builds ./cmd/bluez-gateway, a
+      # raw-D-Bus collector that logs only and publishes nothing, kept because
+      # it is a useful bare-BlueZ reference. Publishing the latter under the
+      # bare repository name (as this workflow used to) silently gave the
+      # platform an image that connects to a strap and produces no data.
+      - name: Build images
         run: |
           IMAGE=ghcr.io/${{ github.repository }}
           SHA_TAG=sha-$(echo ${{ github.sha }} | cut -c1-7)
 
-          docker build -f Dockerfile.k8s -t ${IMAGE}:main -t ${IMAGE}:${SHA_TAG} .
+          docker build -f Dockerfile -t ${IMAGE}/server:main -t ${IMAGE}/server:${SHA_TAG} .
+          docker build -f Dockerfile.k8s -t ${IMAGE}/bluez:main -t ${IMAGE}/bluez:${SHA_TAG} .
 
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             VERSION=${GITHUB_REF_NAME#v}
             MINOR=$(echo $VERSION | cut -d. -f1-2)
-            docker tag ${IMAGE}:main ${IMAGE}:${VERSION}
-            docker tag ${IMAGE}:main ${IMAGE}:${MINOR}
+            for v in "$VERSION" "$MINOR"; do
+              docker tag ${IMAGE}/server:main ${IMAGE}/server:$v
+              docker tag ${IMAGE}/bluez:main  ${IMAGE}/bluez:$v
+            done
           fi
 
       - name: Push image
@@ -37,12 +47,16 @@ jobs:
           IMAGE=ghcr.io/${{ github.repository }}
           SHA_TAG=sha-$(echo ${{ github.sha }} | cut -c1-7)
 
-          docker push ${IMAGE}:main
-          docker push ${IMAGE}:${SHA_TAG}
+          for img in server bluez; do
+            docker push ${IMAGE}/$img:main
+            docker push ${IMAGE}/$img:${SHA_TAG}
+          done
 
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             VERSION=${GITHUB_REF_NAME#v}
             MINOR=$(echo $VERSION | cut -d. -f1-2)
-            docker push ${IMAGE}:${VERSION}
-            docker push ${IMAGE}:${MINOR}
+            for img in server bluez; do
+              docker push ${IMAGE}/$img:$VERSION
+              docker push ${IMAGE}/$img:$MINOR
+            done
           fi

@@ -15,8 +15,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # GITHUB_TOKEN, not a PAT: the previous GHCR_TOKEN secret expired and every
+      # build failed at login with "denied", before anything was even built.
+      # The built-in token needs no rotation and is what the sibling repos use.
       - name: Log in to GitHub Container Registry
-        run: echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       # Two binaries, two images. Dockerfile builds the repo root: the gateway
       # with the Kafka producer, the control API and its page — the one the

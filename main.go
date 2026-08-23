@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,9 +13,17 @@ import (
 	"github.com/clunc/hr-monitor-ble-server/pkg/heartrate"
 	"github.com/clunc/hr-monitor-ble-server/pkg/heartratepb"
 	"github.com/clunc/hr-monitor-ble-server/pkg/httpapi"
+	"github.com/clunc/hr-monitor-ble-server/pkg/schemareg"
+	"github.com/clunc/hr-monitor-ble-server/pkg/wire"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/protobuf/proto"
 )
+
+// The registry stores the schema text itself, so ship the contract with the
+// binary rather than depending on a file next to it at runtime.
+//
+//go:embed proto/heartrate.proto
+var heartrateProto string
 
 func main() {
 	logrus.SetFormatter(&logrus.TextFormatter{
@@ -32,6 +41,7 @@ func main() {
 	}
 
 	hrm := heartrate.NewHeartRateMonitor(config)
+	hrm.SetSource(source)
 	dataStream := hrm.Subscribe()
 	hrm.Start()
 	defer hrm.Stop()
@@ -75,6 +85,21 @@ func main() {
 		logrus.Warn("KAFKA_BROKER/TOPIC unset — running without a producer (log only)")
 	}
 
+	// Confluent wire framing, required by the S3 sink's ProtobufConverter to
+	// resolve the message type — without it the lakehouse path cannot consume
+	// this topic at all. Unset registry = bare protobuf, as before.
+	var schemaID int32
+	if reg := os.Getenv("SCHEMA_REGISTRY_URL"); reg != "" && producer != nil {
+		id, err := schemareg.New(reg).EnsureProtobuf(topic+"-value", heartrateProto)
+		if err != nil {
+			logrus.Fatalf("schema registry: %v", err)
+		}
+		schemaID = id
+		logrus.Infof("registered schema for %s-value: id=%d (Confluent framing on)", topic, id)
+	} else if producer != nil {
+		logrus.Warn("SCHEMA_REGISTRY_URL unset — publishing bare protobuf (not sinkable to parquet)")
+	}
+
 	for data := range dataStream {
 		data.Source = source
 		if len(data.GetRrIntervals()) > 0 {
@@ -83,7 +108,7 @@ func main() {
 			logrus.Infof("Heart rate: %d bpm", data.GetHeartRate())
 		}
 		if producer != nil {
-			sendToKafka(producer, topic, data)
+			sendToKafka(producer, topic, data, schemaID)
 		}
 	}
 }
@@ -120,11 +145,14 @@ func createKafkaProducer(broker string) (sarama.SyncProducer, error) {
 	return sarama.NewSyncProducer([]string{broker}, config)
 }
 
-func sendToKafka(producer sarama.SyncProducer, topic string, data *heartratepb.HeartRateMeasurement) {
+func sendToKafka(producer sarama.SyncProducer, topic string, data *heartratepb.HeartRateMeasurement, schemaID int32) {
 	message, err := proto.Marshal(data)
 	if err != nil {
 		logrus.Errorf("Failed to marshal measurement: %v", err)
 		return
+	}
+	if schemaID > 0 {
+		message = wire.Wrap(schemaID, message)
 	}
 	if _, _, err := producer.SendMessage(&sarama.ProducerMessage{
 		Topic: topic,

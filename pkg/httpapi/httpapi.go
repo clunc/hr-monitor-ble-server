@@ -41,12 +41,19 @@ type Server struct {
 // so a two-strap setup is two processes — without this the page can only ever
 // show half of what is running.
 type peer struct {
-	URL    string `json:"url"`
-	Source string `json:"source,omitempty"`
-	Link   string `json:"link"`
-	Device string `json:"device,omitempty"`
-	LastHR uint32 `json:"last_hr,omitempty"`
-	Err    string `json:"error,omitempty"`
+	URL string `json:"url"`
+	// Same detail the local strap shows. Without these a peer row renders
+	// "last beat —" with no battery and no link duration, which looks like
+	// missing data rather than a thinner payload.
+	Source    string  `json:"source,omitempty"`
+	Link      string  `json:"link"`
+	Device    string  `json:"device,omitempty"`
+	LastHR    uint32  `json:"last_hr,omitempty"`
+	LastHRAge float64 `json:"last_hr_age_s,omitempty"`
+	Connected float64 `json:"connected_s,omitempty"`
+	Battery   uint8   `json:"battery,omitempty"`
+	Paired    bool    `json:"paired,omitempty"`
+	Err       string  `json:"error,omitempty"`
 }
 
 // peersFor reads HR_PEERS: comma-separated base URLs of sibling gateways.
@@ -87,11 +94,15 @@ func (s *Server) fetchPeers() []peer {
 			}
 			defer resp.Body.Close()
 			var st struct {
-				Link   string `json:"link"`
-				Source string `json:"source"`
-				Device string `json:"device"`
-				Target string `json:"target"`
-				LastHR uint32 `json:"last_hr"`
+				Link      string  `json:"link"`
+				Source    string  `json:"source"`
+				Device    string  `json:"device"`
+				Target    string  `json:"target"`
+				LastHR    uint32  `json:"last_hr"`
+				LastHRAge float64 `json:"last_hr_age_s"`
+				Connected float64 `json:"connected_s"`
+				Battery   uint8   `json:"battery"`
+				Paired    bool    `json:"paired"`
 			}
 			if err := json.NewDecoder(resp.Body).Decode(&st); err != nil {
 				out[i].Err = err.Error()
@@ -104,7 +115,11 @@ func (s *Server) fetchPeers() []peer {
 			if label == "" {
 				label = st.Target
 			}
-			out[i] = peer{URL: url, Source: label, Link: st.Link, Device: st.Device, LastHR: st.LastHR}
+			out[i] = peer{
+				URL: url, Source: label, Link: st.Link, Device: st.Device,
+				LastHR: st.LastHR, LastHRAge: st.LastHRAge,
+				Connected: st.Connected, Battery: st.Battery, Paired: st.Paired,
+			}
 		}(i, url)
 	}
 	wg.Wait()

@@ -180,18 +180,22 @@ func (hrm *HeartRateMonitor) Connect(name, mac string) error {
 	if hrm.desired.Swap(true) {
 		return ErrBusy
 	}
+	// matchesTargetDevice ANDs address and name, so a selector must replace the
+	// other one rather than accumulate with it. Without this, picking a device by
+	// address pinned it permanently: a later ?name= left the stale MAC in place,
+	// the two could never both match, and only a restart cleared it.
 	hrm.mu.Lock()
-	if name != "" {
-		hrm.config.TargetDeviceName = name
-	}
 	if mac != "" {
 		hrm.config.TargetDeviceMAC = mac
-		if name == "" {
-			// matchesTargetDevice ANDs address and name, so an explicit address
-			// picked from the device list would otherwise still have to satisfy
-			// the configured name ("Polar H10") and match nothing.
-			hrm.config.TargetDeviceName = ""
-		}
+		hrm.config.TargetDeviceName = name // "" unless the caller sent both
+	} else if name != "" {
+		hrm.config.TargetDeviceName = name
+		hrm.config.TargetDeviceMAC = ""
+	}
+	// A new target invalidates the previous strap's reading; keeping it makes the
+	// UI show a stale bpm under a "scanning" chip.
+	if name != "" || mac != "" {
+		hrm.lastHR, hrm.lastHRAt = 0, time.Time{}
 	}
 	hrm.lastErr = ""
 	hrm.desiredSince = time.Now()

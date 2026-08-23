@@ -1,13 +1,16 @@
 package main
 
 import (
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/IBM/sarama"
 	"github.com/clunc/hr-monitor-ble-server/pkg/heartrate"
 	"github.com/clunc/hr-monitor-ble-server/pkg/heartratepb"
+	"github.com/clunc/hr-monitor-ble-server/pkg/httpapi"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/protobuf/proto"
 )
@@ -19,7 +22,7 @@ func main() {
 	})
 
 	config := heartrate.Config{
-		TargetDeviceName: "Polar H10",
+		TargetDeviceName: envOr("TARGET_NAME", "Polar H10"),
 		TargetDeviceMAC:  os.Getenv("TARGET_MAC"),
 		ScanTimeout:      30,
 	}
@@ -29,6 +32,21 @@ func main() {
 	hrm.Start()
 	defer hrm.Stop()
 
+	// Control API. The gateway now boots idle: the radio stays untouched until
+	// something POSTs /connect (the dashboard toggle, or AUTO_CONNECT here).
+	api := httpapi.New(hrm)
+	addr := envOr("HTTP_ADDR", ":8080")
+	go func() {
+		logrus.Infof("control API listening on %s", addr)
+		if err := http.ListenAndServe(addr, api.Handler()); err != nil {
+			logrus.Fatalf("control API: %v", err)
+		}
+	}()
+	if os.Getenv("AUTO_CONNECT") == "true" {
+		logrus.Info("AUTO_CONNECT=true — acquiring link at boot")
+		_ = hrm.Connect("", "")
+	}
+
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
@@ -37,22 +55,21 @@ func main() {
 		os.Exit(0)
 	}()
 
-	kafkaBroker := os.Getenv("KAFKA_BROKER")
-	if kafkaBroker == "" {
-		logrus.Fatal("KAFKA_BROKER environment variable is not set")
-	}
-
+	// Kafka is optional so the gateway can be exercised (and its control surface
+	// tested) without a broker; measurements are logged either way.
+	var producer sarama.SyncProducer
 	topic := os.Getenv("TOPIC")
-	if topic == "" {
-		logrus.Fatal("TOPIC environment variable is not set")
+	if broker := os.Getenv("KAFKA_BROKER"); broker != "" && topic != "" {
+		p, err := createKafkaProducer(broker)
+		if err != nil {
+			logrus.Fatalf("Failed to create Kafka producer: %v", err)
+		}
+		defer p.Close()
+		producer = p
+		logrus.Infof("Connected to Kafka broker %s, publishing to topic %s", broker, topic)
+	} else {
+		logrus.Warn("KAFKA_BROKER/TOPIC unset — running without a producer (log only)")
 	}
-
-	producer, err := createKafkaProducer(kafkaBroker)
-	if err != nil {
-		logrus.Fatalf("Failed to create Kafka producer: %v", err)
-	}
-	defer producer.Close()
-	logrus.Infof("Connected to Kafka broker %s, publishing to topic %s", kafkaBroker, topic)
 
 	for data := range dataStream {
 		if len(data.GetRrIntervals()) > 0 {
@@ -60,8 +77,17 @@ func main() {
 		} else {
 			logrus.Infof("Heart rate: %d bpm", data.GetHeartRate())
 		}
-		sendToKafka(producer, topic, data)
+		if producer != nil {
+			sendToKafka(producer, topic, data)
+		}
 	}
+}
+
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
 }
 
 func createKafkaProducer(broker string) (sarama.SyncProducer, error) {
@@ -69,6 +95,7 @@ func createKafkaProducer(broker string) (sarama.SyncProducer, error) {
 	config.Producer.Retry.Max = 5
 	config.Producer.RequiredAcks = sarama.WaitForAll
 	config.Producer.Return.Successes = true
+	config.Metadata.Retry.Backoff = 2 * time.Second
 
 	return sarama.NewSyncProducer([]string{broker}, config)
 }
@@ -79,12 +106,10 @@ func sendToKafka(producer sarama.SyncProducer, topic string, data *heartratepb.H
 		logrus.Errorf("Failed to marshal measurement: %v", err)
 		return
 	}
-
-	_, _, err = producer.SendMessage(&sarama.ProducerMessage{
+	if _, _, err := producer.SendMessage(&sarama.ProducerMessage{
 		Topic: topic,
 		Value: sarama.ByteEncoder(message),
-	})
-	if err != nil {
+	}); err != nil {
 		logrus.Errorf("Failed to publish to Kafka: %v", err)
 	}
 }

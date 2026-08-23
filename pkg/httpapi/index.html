@@ -59,6 +59,7 @@
   .note { font-size: .82rem; margin-top: .5rem; color: #7fb2e0; }
   .note.err { color: #e8918b; }
   .note.dim { color: #7f94a8; }
+  .warn-txt { color: #e8918b; }
 
   .dev { display: flex; align-items: center; gap: .8rem; padding: .5rem 0; border-top: 1px solid rgba(255,255,255,.06); }
   .dev:first-of-type { border-top: 0; }
@@ -68,6 +69,7 @@
   .dev .rssi { margin-left: auto; display: flex; align-items: center; gap: .5rem; color: #7fb2e0; font-size: .78rem; font-variant-numeric: tabular-nums; }
   .bar { width: 54px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.09); overflow: hidden; }
   .bar > i { display: block; height: 100%; background: #2f6ea5; }
+  button.armed { background: rgba(224,168,47,.22); border-color: #e0a82f; color: #e8b84b; }
   .hr-tag { font-size: .68rem; font-weight: 700; color: #5fd39a; background: rgba(58,168,110,.16); padding: .1rem .4rem; border-radius: 5px; margin-left: .45rem; }
   .empty { color: #5f7488; font-size: .85rem; }
   footer { margin-top: 2rem; color: #5f7488; font-size: .8rem; text-align: center; }
@@ -134,7 +136,11 @@
     if (r.battery) meta.push(`battery ${r.battery}%`);
     if (r.paired) meta.push('bonded');
     if (r.last_hr) meta.push(`last beat ${fmtAge(r.last_hr_age_s)}`);
-    if (!r.local) meta.push(`<a href="${r.url}" target="_blank">${r.url}</a>`);
+    if (!r.local) {
+      const host = (r.url || '').replace(/^https?:\/\//, '');
+      meta.push(`<a href="${r.url}" target="_blank">${host}</a>`);
+      if (r.error) meta.push(`<span class="warn-txt">${r.error}</span>`);
+    }
     if (r.link === 'scanning' && r.local) {
       meta.push(r.target_last_seen_s != null ? `target seen ${fmtAge(r.target_last_seen_s)}` : 'target not broadcasting');
     }
@@ -142,13 +148,16 @@
     const dead = r.link === 'unreachable';
     // A message while idle describes how the last attempt ended, not a live fault.
     let msg = '', kind = 'dim';
+    const scanNoise = /timeout while scanning|device never streamed|connect aborted/i;
     if (r.link === 'waiting') { msg = 'Subscribed and holding — on a Fitbit: swipe down, tap HR on Equipment.'; kind = ''; }
     else if (/^pairing with/i.test(r.last_error || '')) { msg = r.last_error; kind = ''; }
+    else if (r.link === 'scanning' && scanNoise.test(r.last_error || '')) { msg = ''; }
     else if (r.last_error) { msg = r.last_error; kind = r.link === 'idle' ? 'dim' : 'err'; }
     return `<div class="strap ${r.local ? 'here' : ''}">
       <div class="who">
         <div class="name">
-          ${r.device || r.source || r.target || '(unnamed)'}
+          ${r.device || r.source || r.target ||
+            (r.url ? r.url.replace(/^https?:\/\//, '').split(':')[0] : '(unnamed)')}
           <span class="chip ${r.link}">${r.link}</span>
           ${r.device && r.source && !r.device.toLowerCase().includes(r.source.split('-')[0])
               ? `<span class="tag warn">publishing as ${r.source}</span>` : ''}
@@ -188,8 +197,8 @@
     const showAll = $('all').checked;
     const straps = list.filter(d => d.hr);
     const shown = (showAll ? list : straps).slice(0, 12);
-    $('devcount').textContent = (idle && !list.length) ? ''
-      : `· ${straps.length} strap${straps.length === 1 ? '' : 's'} of ${list.length} seen`;
+    $('devcount').textContent = list.length
+      ? `· ${straps.length} strap${straps.length === 1 ? '' : 's'} of ${list.length} seen` : '';
     if (!shown.length) {
       $('devices').innerHTML = `<div class="empty">${idle
         ? 'Radio is idle — nothing is scanning. Press <b>Connect</b> on a strap above.'
@@ -197,6 +206,7 @@
                       : 'Scanning… nothing seen yet.'}</div>`;
       return;
     }
+    const localRow = rows.find(r => r.local);
     const heldBy = {};
     for (const r of rows) {
       if (r.link === 'connected' && r.device) heldBy[r.device.toLowerCase()] = r.source || r.device;
@@ -214,18 +224,32 @@
         <div class="rssi">
           <span>${d.rssi} dBm</span>
           <span class="bar"><i style="width:${pct}%"></i></span>
-          <button data-mac="${d.address}" ${held ? 'disabled title="already held by ' + held + '"' : ''}>${held ? 'in use' : 'Use'}</button>
+          <button data-mac="${d.address}" data-name="${d.name || d.address}"
+                  ${held ? 'disabled title="already held by ' + held + '"' : ''}
+                  title="${held ? 'already held by ' + held : 'point ' + (localRow?.source || 'this gateway') + ' at this strap'}"
+                  >${held ? 'in use' : 'Use here'}</button>
         </div>
       </div>`;
     }).join('');
     for (const b of $('devices').querySelectorAll('button[data-mac]')) {
       b.onclick = async () => {
         if (busy) return;
+        // Replacing a strap this gateway is actively holding needs a second,
+        // deliberate click — the first one only says what will happen.
+        const holding = localRow && localRow.link === 'connected' && localRow.device &&
+                        localRow.device.toLowerCase() !== (b.dataset.name || '').toLowerCase();
+        if (holding && b.dataset.armed !== '1') {
+          b.dataset.armed = '1';
+          b.classList.add('armed');
+          b.textContent = `Replace ${localRow.device}?`;
+          setTimeout(() => { if (b.dataset.armed === '1') { b.dataset.armed = ''; b.classList.remove('armed'); refreshDevices(); } }, 5000);
+          return;
+        }
         busy = true;
         try {
           await fetch('/disconnect', { method: 'POST' });
           await fetch('/connect?mac=' + encodeURIComponent(b.dataset.mac), { method: 'POST' });
-        } finally { busy = false; refresh(); }
+        } finally { busy = false; refresh(); refreshDevices(); }
       };
     }
   }

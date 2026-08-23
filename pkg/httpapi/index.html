@@ -15,53 +15,59 @@
   header { text-align: center; margin-bottom: 2rem; }
   h1 { font-size: clamp(1.5rem, 4vw, 2.4rem); margin: 0; letter-spacing: -0.02em; }
   .sub { color: #8aa0b4; margin-top: .5rem; font-size: .95rem; }
-  main { width: 100%; max-width: 680px; display: flex; flex-direction: column; gap: .8rem; }
+  main { width: 100%; max-width: 760px; display: flex; flex-direction: column; gap: .8rem; }
   .card {
     background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08);
     border-radius: 14px; padding: 1.1rem 1.25rem;
   }
-  .row { display: flex; align-items: center; gap: 1rem; }
-  .chip {
-    font-size: .8rem; padding: .25rem .7rem; border-radius: 999px; font-weight: 600;
-    background: rgba(255,255,255,.08); color: #9fb3c6; white-space: nowrap;
-  }
-  .chip.idle      { background: rgba(255,255,255,.07);  color: #9fb3c6; }
-  .chip.scanning   { background: rgba(224,168,47,.18);   color: #e8b84b; }
+  h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: #8aa0b4; margin: 0 0 .8rem; font-weight: 600; display: flex; align-items: center; gap: .6rem; }
+  .filter { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500; color: #7f94a8; display: flex; align-items: center; gap: .35rem; cursor: pointer; }
+
+  /* one row per strap — the gateway serving this page is just another row */
+  .strap { display: flex; align-items: center; gap: 1rem; padding: .9rem 0; border-top: 1px solid rgba(255,255,255,.07); }
+  .strap:first-child { border-top: 0; padding-top: .2rem; }
+  .strap .who { min-width: 0; flex: 1 1 auto; }
+  .strap .name { font-weight: 600; font-size: 1.05rem; display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+  .strap .meta { color: #8aa0b4; font-size: .8rem; margin-top: .2rem; line-height: 1.45; }
+  .strap .meta a { color: #7fb2e0; text-decoration: none; }
+  .strap .bpm { font-size: 2.1rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; line-height: 1; }
+  .strap .bpm small { font-size: .85rem; font-weight: 500; color: #8aa0b4; margin-left: .25rem; }
+  .strap .bpm.stale { color: #5f7488; }
+  .strap .ctl { display: flex; gap: .45rem; flex: 0 0 auto; }
+  .strap.here { background: rgba(47,110,165,.06); border-radius: 10px; padding-left: .7rem; padding-right: .7rem; margin: 0 -.7rem; }
+
+  .chip { font-size: .72rem; padding: .2rem .6rem; border-radius: 999px; font-weight: 600; background: rgba(255,255,255,.08); color: #9fb3c6; white-space: nowrap; }
+  .chip.idle        { background: rgba(255,255,255,.07); color: #9fb3c6; }
+  .chip.scanning,
+  .chip.waiting     { background: rgba(224,168,47,.18);  color: #e8b84b; }
   .chip.connecting,
-  .chip.linking    { background: rgba(47,110,165,.22);   color: #7fb2e0; }
-  .chip.waiting    { background: rgba(224,168,47,.18);   color: #e8b84b; }
-  .chip.connected { background: rgba(58,168,110,.18);   color: #5fd39a; }
-  .bpm { font-size: 3rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.03em; line-height: 1; }
-  .bpm .unit { font-size: .95rem; font-weight: 500; color: #8aa0b4; margin-left: .35rem; }
-  .bpm.stale { color: #5f7488; }
-  .meta { margin-left: auto; text-align: right; color: #9fb3c6; font-size: .85rem; line-height: 1.5; }
-  .meta b { color: #e6edf3; font-weight: 600; }
-  .actions { display: flex; gap: .6rem; margin-top: 1rem; }
+  .chip.linking     { background: rgba(47,110,165,.22);  color: #7fb2e0; }
+  .chip.connected   { background: rgba(58,168,110,.18);  color: #5fd39a; }
+  .chip.unreachable { background: rgba(232,145,139,.16); color: #e8918b; }
+  .tag { font-size: .62rem; font-weight: 700; letter-spacing: .06em; color: #7fb2e0; background: rgba(47,110,165,.18); padding: .1rem .4rem; border-radius: 5px; }
+
   button {
-    font: inherit; font-weight: 600; color: #e6edf3; background: rgba(47,110,165,.22);
-    border: 1px solid #2f6ea5; border-radius: 10px; padding: .55rem 1.1rem; cursor: pointer;
+    font: inherit; font-size: .82rem; font-weight: 600; color: #e6edf3; background: rgba(47,110,165,.22);
+    border: 1px solid #2f6ea5; border-radius: 9px; padding: .38rem .8rem; cursor: pointer;
     transition: background .12s ease, opacity .12s ease;
   }
   button:hover:not(:disabled) { background: rgba(47,110,165,.38); }
-  button:disabled { opacity: .35; cursor: default; }
+  button:disabled { opacity: .3; cursor: default; }
   button.ghost { background: transparent; border-color: rgba(255,255,255,.18); }
-  button.small { padding: .3rem .7rem; font-size: .8rem; border-radius: 8px; }
-  h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: #8aa0b4; margin: 0 0 .8rem; font-weight: 600; display: flex; align-items: center; gap: .6rem; }
-  .filter { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500; color: #7f94a8; display: flex; align-items: center; gap: .35rem; cursor: pointer; }
-  .tag { font-size: .68rem; font-weight: 700; letter-spacing: .04em; color: #5fd39a; background: rgba(58,168,110,.16); padding: .1rem .4rem; border-radius: 5px; margin-left: .45rem; vertical-align: middle; }
+
+  .note { font-size: .82rem; margin-top: .5rem; color: #7fb2e0; }
+  .note.err { color: #e8918b; }
+  .note.dim { color: #7f94a8; }
+
   .dev { display: flex; align-items: center; gap: .8rem; padding: .5rem 0; border-top: 1px solid rgba(255,255,255,.06); }
   .dev:first-of-type { border-top: 0; }
   .dev .name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .dev.stale { opacity: .45; }
-  button[data-busy="1"] { opacity: .35; pointer-events: none; }
   .dev .addr { color: #5f7488; font-size: .78rem; font-variant-numeric: tabular-nums; }
+  .dev.stale { opacity: .45; }
   .dev .rssi { margin-left: auto; display: flex; align-items: center; gap: .5rem; color: #7fb2e0; font-size: .78rem; font-variant-numeric: tabular-nums; }
   .bar { width: 54px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.09); overflow: hidden; }
   .bar > i { display: block; height: 100%; background: #2f6ea5; }
-  .err { color: #e8918b; font-size: .85rem; margin-top: .8rem; }
-  .err.note { color: #7f94a8; }
-  .hint { color: #7fb2e0; font-size: .85rem; margin-top: .8rem; }
-  body[data-negotiating="1"] .dev button { opacity: .3; pointer-events: none; }
+  .hr-tag { font-size: .68rem; font-weight: 700; color: #5fd39a; background: rgba(58,168,110,.16); padding: .1rem .4rem; border-radius: 5px; margin-left: .45rem; }
   .empty { color: #5f7488; font-size: .85rem; }
   footer { margin-top: 2rem; color: #5f7488; font-size: .8rem; text-align: center; }
   code { background: rgba(255,255,255,.07); padding: .1rem .35rem; border-radius: 6px; }
@@ -70,22 +76,13 @@
 <body>
   <header>
     <h1>❤️ HR Monitor</h1>
-    <div class="sub">Chest-strap gateway — <span id="target">…</span> · adapter <code id="adapter">…</code></div>
+    <div class="sub">Chest-strap gateways · adapter <code id="adapter">…</code></div>
   </header>
 
   <main>
     <section class="card">
-      <div class="row">
-        <span class="chip idle" id="chip">…</span>
-        <div class="bpm" id="bpm">—<span class="unit">bpm</span></div>
-        <div class="meta" id="meta"></div>
-      </div>
-      <div class="actions">
-        <button id="connect">Connect</button>
-        <button id="disconnect" class="ghost">Disconnect</button>
-      </div>
-      <div class="hint" id="hint" hidden></div>
-      <div class="err" id="err" hidden></div>
+      <h2>Straps</h2>
+      <div id="straps"><div class="empty">…</div></div>
     </section>
 
     <section class="card">
@@ -93,165 +90,142 @@
         Devices in range <span id="devcount"></span>
         <label class="filter"><input type="checkbox" id="all"> show all</label>
       </h2>
-      <div id="devices"><div class="empty">Nothing seen yet — the radio only scans while connecting.</div></div>
+      <div id="devices"><div class="empty">Nothing seen yet.</div></div>
     </section>
   </main>
 
-  <footer>Control surface for the BLE link · <code>/status</code> <code>/devices</code> <code>/connect</code> <code>/disconnect</code></footer>
+  <footer>One page for every strap · <code>/status</code> <code>/peers</code> <code>/connect</code> <code>/disconnect</code></footer>
 
 <script>
   const $ = id => document.getElementById(id);
-  let scanning = false, busy = false, idle = true;
+  let scanning = false, idle = true, busy = false;
 
-  // Control calls are single-flight and re-entrancy guarded. Without this, every
-  // extra click aborts the scan already running and starts a fresh one — a scan
-  // that never gets the ~30s it needs to catch an intermittent advertiser.
-  async function post(path) {
+  const fmtAge = s => s == null ? '—' : s < 60 ? `${Math.round(s)}s ago` : `${Math.floor(s / 60)}m ago`;
+  const fmtDur = s => { if (!s) return null; const m = Math.floor(s / 60), x = Math.floor(s % 60); return m ? `${m}m ${x}s` : `${x}s`; };
+
+  // Local and remote straps render identically; only the endpoint differs. Two
+  // pages showing half the rig each was the wrong shape — this is one rig.
+  async function control(row, action) {
     if (busy) return;
     busy = true;
-    setControlsBusy(true);
     try {
+      const path = row.local
+        ? `/${action}`
+        : `/peer/${action}?url=${encodeURIComponent(row.url)}`;
       const r = await fetch(path, { method: 'POST' });
-      if (r.status === 409) showErr('Already connecting or connected.');
-      await refresh();
-    } catch (e) { showErr(String(e)); }
-    finally { busy = false; setControlsBusy(false); }
+      if (r.status === 409) note(row, 'Already connecting or connected.', 'err');
+    } catch (e) { note(row, String(e), 'err'); }
+    finally { busy = false; refresh(); }
   }
-  function setControlsBusy(b) {
-    for (const el of document.querySelectorAll('button')) el.dataset.busy = b ? '1' : '';
-  }
-  function showErr(msg) { $('err').hidden = !msg; $('err').textContent = msg || ''; }
-
-  $('connect').onclick = () => post('/connect');
-  $('disconnect').onclick = () => post('/disconnect');
-
-  function fmtAge(s) {
-    if (s == null) return '—';
-    return s < 60 ? `${Math.round(s)}s ago` : `${Math.floor(s / 60)}m ago`;
-  }
-  function fmtDur(s) {
-    if (!s) return null;
-    const m = Math.floor(s / 60), sec = Math.floor(s % 60);
-    return m ? `${m}m ${sec}s` : `${sec}s`;
+  function note(row, msg, kind) {
+    const el = document.querySelector(`[data-note="${row.key}"]`);
+    if (el) { el.hidden = !msg; el.textContent = msg || ''; el.className = 'note ' + (kind || ''); }
   }
 
-  async function refresh() {
-    let st;
-    try { st = await (await fetch('/status')).json(); }
-    catch { $('chip').textContent = 'unreachable'; return; }
-
-    scanning = st.link === 'scanning';
-    idle = st.link === 'idle';
-    // Once a device is found, the handshake owns the radio: block retargeting
-    // until it finishes or the user explicitly disconnects.
-    const negotiating = st.link === 'connecting' || st.link === 'linking' || st.link === 'waiting';
-    document.body.dataset.negotiating = negotiating ? '1' : '';
-    $('chip').textContent = st.link;
-    $('chip').className = 'chip ' + st.link;
-    $('target').textContent = st.target || st.target_mac || 'no target set';
-    $('adapter').textContent = st.adapter || '—';
-
-    // HR goes stale the moment notifications stop, even while the link is up.
-    const fresh = st.last_hr && st.last_hr_age_s != null && st.last_hr_age_s < 10;
-    $('bpm').innerHTML = (st.last_hr || '—') + '<span class="unit">bpm</span>';
-    $('bpm').className = 'bpm' + (fresh ? '' : ' stale');
-
+  function rowHTML(r) {
+    const fresh = r.last_hr && r.last_hr_age_s != null && r.last_hr_age_s < 10;
+    const bpm = r.last_hr ? `${r.last_hr}<small>bpm</small>` : '—<small>bpm</small>';
     const meta = [];
-    if (st.device) meta.push(`<b>${st.device}</b>`);
-    else if (st.address) meta.push(`<b>${st.address}</b>`);
-    const dur = fmtDur(st.connected_s);
+    if (r.device) meta.push(r.device);
+    else if (r.target) meta.push(`target ${r.target}`);
+    const dur = fmtDur(r.connected_s);
     if (dur) meta.push(`linked ${dur}`);
-    if (st.battery) meta.push(`battery ${st.battery}%`);
-    if (st.paired) meta.push('bonded');
-    if (st.last_hr) meta.push(`last beat ${fmtAge(st.last_hr_age_s)}`);
-    // Say plainly whether the target is on the air — an empty list has meant
-    // both "not in range" and "not scanning", and neither was ever stated.
-    if (st.link === 'scanning') {
-      meta.push(st.target_last_seen_s != null
-        ? `target seen ${fmtAge(st.target_last_seen_s)}`
-        : 'target not broadcasting');
+    if (r.battery) meta.push(`battery ${r.battery}%`);
+    if (r.paired) meta.push('bonded');
+    if (r.last_hr) meta.push(`last beat ${fmtAge(r.last_hr_age_s)}`);
+    if (!r.local) meta.push(`<a href="${r.url}" target="_blank">${r.url}</a>`);
+    if (r.link === 'scanning' && r.local) {
+      meta.push(r.target_last_seen_s != null ? `target seen ${fmtAge(r.target_last_seen_s)}` : 'target not broadcasting');
     }
-    $('meta').innerHTML = meta.join('<br>');
+    const live = r.link !== 'idle' && r.link !== 'unreachable';
+    const dead = r.link === 'unreachable';
+    // A message while idle describes how the last attempt ended, not a live fault.
+    let msg = '', kind = 'dim';
+    if (r.link === 'waiting') { msg = 'Subscribed and holding — on a Fitbit: swipe down, tap HR on Equipment.'; kind = ''; }
+    else if (/^pairing with/i.test(r.last_error || '')) { msg = r.last_error; kind = ''; }
+    else if (r.last_error) { msg = r.last_error; kind = r.link === 'idle' ? 'dim' : 'err'; }
+    return `<div class="strap ${r.local ? 'here' : ''}">
+      <div class="who">
+        <div class="name">
+          ${r.source || r.target || '(unnamed)'}
+          <span class="chip ${r.link}">${r.link}</span>
+          ${r.local ? '<span class="tag">THIS GATEWAY</span>' : ''}
+        </div>
+        <div class="meta">${meta.join(' · ')}</div>
+        <div class="note ${kind}" data-note="${r.key}" ${msg ? '' : 'hidden'}>${msg}</div>
+      </div>
+      <div class="bpm ${fresh ? '' : 'stale'}">${bpm}</div>
+      <div class="ctl">
+        <button data-row="${r.key}" data-act="connect" ${live || dead ? 'disabled' : ''}>Connect</button>
+        <button class="ghost" data-row="${r.key}" data-act="disconnect" ${!live || dead ? 'disabled' : ''}>Disconnect</button>
+      </div>
+    </div>`;
+  }
 
-    // Pairing is progress, not failure — showing it in red reads as "broken"
-    // when the gateway is in fact doing the one thing that will fix the link.
-    const msg = st.last_error || '';
-    if (/^pairing with/i.test(msg)) { showErr(''); $('hint').hidden = false; $('hint').textContent = msg; }
-    else showErr(msg);
-    // When idle, whatever is showing is a record of how the last attempt ended,
-    // not something currently going wrong — don't dress it up as an error.
-    $('err').classList.toggle('note', idle);
-    $('connect').disabled = st.desired;
-    $('disconnect').disabled = !st.desired;
-    if (st.link === 'waiting') {
-      $('hint').hidden = false;
-      $('hint').innerHTML = 'Subscribed and holding — the strap isn\'t streaming yet. ' +
-        'On a Fitbit: swipe down and tap <b>HR on Equipment</b> (a workout alone won\'t do it).';
-    } else if (!/^pairing with/i.test(st.last_error || '')) $('hint').hidden = !negotiating;
-    if (negotiating && !/^pairing with/i.test(st.last_error || '')) $('hint').textContent =
-      `Found ${st.device || st.address || 'device'} — negotiating GATT, this takes a few seconds. Leave it alone.`;
+  let rows = [];
+  async function refresh() {
+    let local, peers = [];
+    try { local = await (await fetch('/status')).json(); } catch { return; }
+    try { peers = await (await fetch('/peers')).json(); } catch {}
+    scanning = local.link === 'scanning';
+    idle = local.link === 'idle';
+    $('adapter').textContent = local.adapter || '—';
+
+    rows = [{ ...local, local: true, key: 'local' },
+            ...(peers || []).map((p, i) => ({ ...p, local: false, key: 'p' + i }))];
+    $('straps').innerHTML = rows.map(rowHTML).join('');
+    for (const b of $('straps').querySelectorAll('button[data-row]')) {
+      b.onclick = () => { const row = rows.find(r => r.key === b.dataset.row); if (row) { b.disabled = true; control(row, b.dataset.act); } };
+    }
   }
 
   async function refreshDevices() {
     let list;
     try { list = await (await fetch('/devices')).json(); } catch { return; }
-    // Default to actual straps (advertising the Heart Rate service). In a block
-    // of flats the raw list is ~200 neighbours' beacons and useless for picking.
     const showAll = $('all').checked;
     const straps = list.filter(d => d.hr);
     const shown = (showAll ? list : straps).slice(0, 12);
-    $('devcount').textContent = (idle && !list.length)
-      ? ''
+    $('devcount').textContent = (idle && !list.length) ? ''
       : `· ${straps.length} strap${straps.length === 1 ? '' : 's'} of ${list.length} seen`;
     if (!shown.length) {
-      // Distinguish "nothing in range" from "nothing is looking" — they used to
-      // render the same, which reads as a dead device when the radio is simply off.
-      const msg = idle
-        ? 'Radio is idle — nothing is scanning. Press <b>Connect</b> to look for your strap.'
-        : list.length
-          ? 'No heart-rate straps advertising yet — wet the electrodes and put it on, or tick “show all”.'
-          : 'Scanning… nothing seen yet.';
-      $('devices').innerHTML = `<div class="empty">${msg}</div>`;
+      $('devices').innerHTML = `<div class="empty">${idle
+        ? 'Radio is idle — nothing is scanning. Press <b>Connect</b> on a strap above.'
+        : list.length ? 'No heart-rate straps advertising yet — or tick “show all”.'
+                      : 'Scanning… nothing seen yet.'}</div>`;
       return;
     }
     $('devices').innerHTML = shown.map(d => {
-      // RSSI -100..-40 mapped to a 0..100% bar.
       const pct = Math.max(0, Math.min(100, Math.round((d.rssi + 100) * 100 / 60)));
-      const label = d.name || '(unnamed)';
-      // A row is a memory of a past scan, not proof the device is here now.
       const stale = d.age_s > 15;
       const age = d.age_s < 2 ? 'now' : d.age_s < 60 ? `${Math.round(d.age_s)}s ago` : `${Math.floor(d.age_s / 60)}m ago`;
       return `<div class="dev${stale ? ' stale' : ''}">
         <div style="min-width:0">
-          <div class="name">${label}${d.hr ? '<span class="tag">HR</span>' : ''}</div>
+          <div class="name">${d.name || '(unnamed)'}${d.hr ? '<span class="hr-tag">HR</span>' : ''}</div>
           <div class="addr">${d.address} · seen ${age}</div>
         </div>
         <div class="rssi">
           <span>${d.rssi} dBm</span>
           <span class="bar"><i style="width:${pct}%"></i></span>
-          <button class="small" data-mac="${d.address}">Use</button>
+          <button data-mac="${d.address}">Use</button>
         </div>
       </div>`;
     }).join('');
     for (const b of $('devices').querySelectorAll('button[data-mac]')) {
       b.onclick = async () => {
-        // Retarget: drop any current intent first, then aim at this address —
-        // sequenced through the same single-flight guard so a double-click can't
-        // interleave the two halves.
         if (busy) return;
-        await post('/disconnect');
-        await post('/connect?mac=' + encodeURIComponent(b.dataset.mac));
+        busy = true;
+        try {
+          await fetch('/disconnect', { method: 'POST' });
+          await fetch('/connect?mac=' + encodeURIComponent(b.dataset.mac), { method: 'POST' });
+        } finally { busy = false; refresh(); }
       };
     }
   }
 
   $('all').onchange = refreshDevices;
-
   refresh(); refreshDevices();
   setInterval(refresh, 1000);
-  setInterval(() => { if (idle) refreshDevices(); }, 5000);
-  // Only poll the device list while the radio is actually scanning.
-  setInterval(() => { if (scanning) refreshDevices(); }, 2000);
+  setInterval(refreshDevices, 2500);
 </script>
 </body>
 </html>

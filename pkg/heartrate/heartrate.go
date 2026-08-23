@@ -165,8 +165,35 @@ func (hrm *HeartRateMonitor) Start() {
 	go hrm.monitor()
 }
 
-// SetSource labels this gateway's strap, matching what it stamps on published
-// measurements, so peers can be told apart in a combined view.
+// SourceLabel is the label to stamp on published measurements. It follows the
+// CONNECTED DEVICE, not the configured target: the device can be retargeted at
+// runtime (the page's Use button), and a label fixed at boot then lies — beats
+// from one strap were published under the other's name and landed in parquet
+// that way, which is unrecoverable after the fact.
+//
+// Falls back to the configured source only while nothing is connected.
+func (hrm *HeartRateMonitor) SourceLabel() string {
+	hrm.mu.Lock()
+	defer hrm.mu.Unlock()
+	return hrm.sourceLabelLocked()
+}
+
+// slugify turns "Polar H10 D812C321" into "polar-h10-d812c321".
+func slugify(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		return '-'
+	}, s)
+	for strings.Contains(s, "--") {
+		s = strings.ReplaceAll(s, "--", "-")
+	}
+	return strings.Trim(s, "-")
+}
+
+// SetSource sets the fallback label used before a device is connected.
 func (hrm *HeartRateMonitor) SetSource(s string) {
 	hrm.mu.Lock()
 	hrm.source = s
@@ -237,7 +264,7 @@ func (hrm *HeartRateMonitor) Status() Status {
 	defer hrm.mu.Unlock()
 	st := Status{
 		State:     hrm.state.String(),
-		Source:    hrm.source,
+		Source:    hrm.sourceLabelLocked(),
 		Desired:   hrm.desired.Load(),
 		Adapter:   hrm.adapterID,
 		Target:    hrm.config.TargetDeviceName,
@@ -346,6 +373,27 @@ func (hrm *HeartRateMonitor) setErr(msg string) {
 	hrm.mu.Lock()
 	hrm.lastErr = msg
 	hrm.mu.Unlock()
+}
+
+// sourceLabelLocked is SourceLabel for callers already holding hrm.mu.
+//
+// The configured label is kept while it is TRUE — the connected device is the
+// configured target, so "polar-h10" stays "polar-h10" rather than becoming
+// "polar-h10-d812c321" and breaking every consumer keyed on it. It is dropped in
+// favour of the device's own name the moment the two disagree, which is exactly
+// the retargeting case that mislabelled one strap's beats as the other's.
+func (hrm *HeartRateMonitor) sourceLabelLocked() string {
+	if hrm.deviceName == "" {
+		return hrm.source
+	}
+	target := hrm.config.TargetDeviceName
+	if target != "" && strings.Contains(strings.ToLower(hrm.deviceName), strings.ToLower(target)) {
+		return hrm.source
+	}
+	if l := slugify(hrm.deviceName); l != "" {
+		return l
+	}
+	return hrm.source
 }
 
 func (hrm *HeartRateMonitor) currentAddr() string {

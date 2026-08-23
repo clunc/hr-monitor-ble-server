@@ -101,7 +101,9 @@ func main() {
 	}
 
 	for data := range dataStream {
-		data.Source = source
+		// Per message, from the live device — a gateway retargeted at runtime
+		// must not keep stamping its old strap's name on someone else's beats.
+		data.Source = hrm.SourceLabel()
 		if len(data.GetRrIntervals()) > 0 {
 			logrus.Infof("Heart rate: %d bpm | RR: %v ms", data.GetHeartRate(), data.GetRrIntervals())
 		} else {

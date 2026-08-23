@@ -45,6 +45,7 @@
   .chip.connected   { background: rgba(58,168,110,.18);  color: #5fd39a; }
   .chip.unreachable { background: rgba(232,145,139,.16); color: #e8918b; }
   .tag { font-size: .62rem; font-weight: 700; letter-spacing: .06em; color: #7fb2e0; background: rgba(47,110,165,.18); padding: .1rem .4rem; border-radius: 5px; }
+  .tag.warn { color: #e8b84b; background: rgba(224,168,47,.18); }
 
   button {
     font: inherit; font-size: .82rem; font-weight: 600; color: #e6edf3; background: rgba(47,110,165,.22);
@@ -126,8 +127,8 @@
     const fresh = r.last_hr && r.last_hr_age_s != null && r.last_hr_age_s < 10;
     const bpm = r.last_hr ? `${r.last_hr}<small>bpm</small>` : '—<small>bpm</small>';
     const meta = [];
-    if (r.device) meta.push(r.device);
-    else if (r.target) meta.push(`target ${r.target}`);
+    if (!r.device && r.target) meta.push(`target ${r.target}`);
+    if (r.device && r.source) meta.push(`source ${r.source}`);
     const dur = fmtDur(r.connected_s);
     if (dur) meta.push(`linked ${dur}`);
     if (r.battery) meta.push(`battery ${r.battery}%`);
@@ -147,8 +148,10 @@
     return `<div class="strap ${r.local ? 'here' : ''}">
       <div class="who">
         <div class="name">
-          ${r.source || r.target || '(unnamed)'}
+          ${r.device || r.source || r.target || '(unnamed)'}
           <span class="chip ${r.link}">${r.link}</span>
+          ${r.device && r.source && !r.device.toLowerCase().includes(r.source.split('-')[0])
+              ? `<span class="tag warn">publishing as ${r.source}</span>` : ''}
           ${r.local ? '<span class="tag">THIS GATEWAY</span>' : ''}
         </div>
         <div class="meta">${meta.join(' · ')}</div>
@@ -194,7 +197,12 @@
                       : 'Scanning… nothing seen yet.'}</div>`;
       return;
     }
+    const heldBy = {};
+    for (const r of rows) {
+      if (r.link === 'connected' && r.device) heldBy[r.device.toLowerCase()] = r.source || r.device;
+    }
     $('devices').innerHTML = shown.map(d => {
+      const held = heldBy[(d.name || '').toLowerCase()];
       const pct = Math.max(0, Math.min(100, Math.round((d.rssi + 100) * 100 / 60)));
       const stale = d.age_s > 15;
       const age = d.age_s < 2 ? 'now' : d.age_s < 60 ? `${Math.round(d.age_s)}s ago` : `${Math.floor(d.age_s / 60)}m ago`;
@@ -206,7 +214,7 @@
         <div class="rssi">
           <span>${d.rssi} dBm</span>
           <span class="bar"><i style="width:${pct}%"></i></span>
-          <button data-mac="${d.address}">Use</button>
+          <button data-mac="${d.address}" ${held ? 'disabled title="already held by ' + held + '"' : ''}>${held ? 'in use' : 'Use'}</button>
         </div>
       </div>`;
     }).join('');

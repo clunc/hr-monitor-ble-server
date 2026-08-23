@@ -17,4 +17,9 @@ message HeartRateMeasurement {
 
   // Time the measurement was received by the server (UTC).
   google.protobuf.Timestamp timestamp = 3;
+
+  // Which strap produced this reading, e.g. "polar-h10" or "charge-6". Lets two
+  // gateways publish to one topic without their beats being indistinguishable —
+  // consumers that predate this field simply ignore it.
+  string source = 4;
 }

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -21,6 +22,9 @@ func main() {
 		TimestampFormat: "2006-01-02 15:04:05",
 	})
 
+	// Labels this gateway's beats so two straps can share one topic. Defaults to
+	// a slug of the target name, which is right for the common single-strap case.
+	source := envOr("HR_SOURCE", slug(envOr("TARGET_NAME", "Polar H10")))
 	config := heartrate.Config{
 		TargetDeviceName: envOr("TARGET_NAME", "Polar H10"),
 		TargetDeviceMAC:  os.Getenv("TARGET_MAC"),
@@ -66,12 +70,13 @@ func main() {
 		}
 		defer p.Close()
 		producer = p
-		logrus.Infof("Connected to Kafka broker %s, publishing to topic %s", broker, topic)
+		logrus.Infof("Connected to Kafka broker %s, publishing to topic %s as source %q", broker, topic, source)
 	} else {
 		logrus.Warn("KAFKA_BROKER/TOPIC unset — running without a producer (log only)")
 	}
 
 	for data := range dataStream {
+		data.Source = source
 		if len(data.GetRrIntervals()) > 0 {
 			logrus.Infof("Heart rate: %d bpm | RR: %v ms", data.GetHeartRate(), data.GetRrIntervals())
 		} else {
@@ -81,6 +86,21 @@ func main() {
 			sendToKafka(producer, topic, data)
 		}
 	}
+}
+
+// slug turns "Polar H10" into "polar-h10" for use as a source label.
+func slug(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		return '-'
+	}, s)
+	for strings.Contains(s, "--") {
+		s = strings.ReplaceAll(s, "--", "-")
+	}
+	return strings.Trim(s, "-")
 }
 
 func envOr(key, def string) string {

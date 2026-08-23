@@ -99,6 +99,7 @@ of a phone or watch, so the link is acquired on demand.
 | `TARGET_NAME` | `Polar H10` | substring match on the advertised name |
 | `TARGET_MAC` | unset | exact address; wearables rotate these, prefer the name |
 | `AUTO_CONNECT` | `false` | acquire a link at boot instead of on demand |
+| `HR_SOURCE` | slug of `TARGET_NAME` | label stamped on every measurement |
 | `BLE_ADAPTER` | auto | preferred adapter; falls back to the first BlueZ reports |
 | `HR_DATA_TIMEOUT_SECONDS` | 20 | reconnect after a stream that *was* flowing stops |
 | `HR_CONNECT_DEADLINE_SECONDS` | 300 | give up hunting and release the radio |
@@ -140,3 +141,18 @@ MAC=AA:BB:CC:DD:EE:FF LISTEN_S=60 go run ./cmd/gattprobe
 Note BlueZ caches a device's GATT database, including for unpaired devices; a
 stale empty cache looks exactly like a device that exposes no services.
 `bluetoothctl remove <mac>` clears it.
+
+## Running two straps at once
+
+Each instance owns one strap, so a second one is a second process with its own
+`HTTP_ADDR`, `TARGET_NAME` and `HR_SOURCE`. Both can publish to the same topic:
+every measurement carries `source`, and rowing-stream-processor namespaces the
+readings per strap (`hr_polar_h10_bpm`, `rr_charge_6`, ...).
+
+One caveat — `rr_intervals`, the HRV series the processor actually consumes, can
+only have one owner. Set `HR_PRIMARY_SOURCE` on the processor to name it; a strap
+that reports no RR intervals never writes the key regardless, so a Fitbit
+alongside a Polar needs no configuration at all.
+
+A concurrent scan does not disturb an established link — verified with one
+instance streaming while another scanned for 70s.

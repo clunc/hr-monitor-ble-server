@@ -714,7 +714,14 @@ func (hrm *HeartRateMonitor) connectCachedTarget(adapter *bluetooth.Adapter) (*b
 	mac := strings.TrimSpace(hrm.config.TargetDeviceMAC)
 	name := strings.TrimSpace(hrm.config.TargetDeviceName)
 	hrm.mu.Unlock()
-	if mac == "" || !devicePaired(mac) {
+	display := name
+	if mac == "" {
+		var ok bool
+		mac, display, ok = pairedDeviceByName(name)
+		if !ok {
+			return nil, nil, false
+		}
+	} else if !devicePaired(mac) {
 		return nil, nil, false
 	}
 
@@ -724,7 +731,6 @@ func (hrm *HeartRateMonitor) connectCachedTarget(adapter *bluetooth.Adapter) (*b
 		return nil, nil, false
 	}
 	addr := bluetooth.Address{MACAddress: bluetooth.MACAddress{MAC: addrMAC}}
-	display := name
 	if display == "" {
 		display = mac
 	}

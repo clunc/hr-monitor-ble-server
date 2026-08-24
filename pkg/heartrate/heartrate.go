@@ -740,6 +740,9 @@ func (hrm *HeartRateMonitor) connectCachedTarget(adapter *bluetooth.Adapter) (*b
 		if !hrm.desired.Load() {
 			return nil, errors.New("connect aborted"), true
 		}
+		_ = adapter.StopScan()
+		_ = exec.Command("bluetoothctl", "disconnect", mac).Run()
+		time.Sleep(500 * time.Millisecond)
 		p, err := adapter.Connect(addr, bluetooth.ConnectionParams{})
 		if err == nil {
 			hrm.lastDeviceAddr = mac
@@ -755,6 +758,7 @@ func (hrm *HeartRateMonitor) connectCachedTarget(adapter *bluetooth.Adapter) (*b
 			return &p, nil, true
 		}
 		log.Warnf("Cached direct connect attempt %d/%d failed: %v", i+1, hrm.reconnectAttempts, err)
+		_ = exec.Command("bluetoothctl", "disconnect", mac).Run()
 		time.Sleep(2 * time.Second)
 	}
 

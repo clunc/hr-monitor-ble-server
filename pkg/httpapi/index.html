@@ -102,6 +102,7 @@
 <script>
   const $ = id => document.getElementById(id);
   let scanning = false, idle = true, busy = false;
+  let devicesTimer = null, devicesDelay = 0;
 
   const fmtAge = s => s == null ? '—' : s < 60 ? `${Math.round(s)}s ago` : `${Math.floor(s / 60)}m ago`;
   const fmtDur = s => { if (!s) return null; const m = Math.floor(s / 60), x = Math.floor(s % 60); return m ? `${m}m ${x}s` : `${x}s`; };
@@ -189,6 +190,7 @@
     for (const b of $('straps').querySelectorAll('button[data-row]')) {
       b.onclick = () => { const row = rows.find(r => r.key === b.dataset.row); if (row) { b.disabled = true; control(row, b.dataset.act); } };
     }
+    scheduleDevicesRefresh();
   }
 
   async function refreshDevices() {
@@ -257,7 +259,16 @@
   $('all').onchange = refreshDevices;
   refresh(); refreshDevices();
   setInterval(refresh, 1000);
-  setInterval(refreshDevices, 2500);
+  function scheduleDevicesRefresh(immediate = false) {
+    const active = rows.some(r => r.link && r.link !== 'idle' && r.link !== 'unreachable');
+    const nextDelay = active ? 1000 : 4000;
+    if (!immediate && devicesTimer && devicesDelay === nextDelay) return;
+    if (devicesTimer) clearInterval(devicesTimer);
+    devicesDelay = nextDelay;
+    if (immediate) refreshDevices();
+    devicesTimer = setInterval(refreshDevices, devicesDelay);
+  }
+  scheduleDevicesRefresh();
 </script>
 </body>
 </html>

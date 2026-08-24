@@ -845,12 +845,35 @@ func (hrm *HeartRateMonitor) subscribeHeartRateData(characteristic bluetooth.Dev
 					}
 					hrm.mu.Lock()
 					never := !hrm.gotData
+					waitExpired := never && !hrm.connectedAt.IsZero() && time.Since(hrm.connectedAt) > hrm.connectDeadline
 					hrm.mu.Unlock()
 					if never {
-						// Subscribed, nothing yet. Do NOT tear down: a Charge 6
-						// only starts streaming when "HR on Equipment" is tapped,
-						// and the subscription must already be open when it does.
-						continue
+						// Give Fitbit's "HR on Equipment" flow a grace period: it
+						// often needs the subscription open before the watch starts
+						// notifications. Do not hold a silent stale link forever.
+						if !waitExpired {
+							continue
+						}
+						log.Warnf("Stopped after %s — subscribed but no heart-rate data", hrm.connectDeadline)
+						hrm.desired.Store(false)
+						hrm.mu.Lock()
+						hrm.lastErr = fmt.Sprintf("stopped after %s — no heart-rate data", hrm.connectDeadline)
+						if hrm.activeChar != nil {
+							hrm.activeChar.EnableNotifications(nil)
+							hrm.activeChar = nil
+						}
+						if hrm.peer != nil {
+							hrm.peer.Disconnect()
+							hrm.peer = nil
+						}
+						if err := hrm.transition(Disconnecting); err != nil {
+							hrm.mu.Unlock()
+							return
+						}
+						hrm.lastDisconnect = time.Now()
+						hrm.transition(Disconnected)
+						hrm.mu.Unlock()
+						return
 					}
 
 					log.Warnf("Stream stopped for %s, reconnecting...", hrm.dataTimeout)

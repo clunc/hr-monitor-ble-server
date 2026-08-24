@@ -617,6 +617,10 @@ func (hrm *HeartRateMonitor) scanAndConnect() (*bluetooth.Device, error) {
 
 	_ = adapter.StopScan()
 
+	if peer, err, ok := hrm.connectCachedTarget(adapter); ok {
+		return peer, err
+	}
+
 	log.Infof("Scanning for %s...", hrm.config.TargetDeviceName)
 
 	var device bluetooth.ScanResult
@@ -703,6 +707,56 @@ func (hrm *HeartRateMonitor) scanAndConnect() (*bluetooth.Device, error) {
 		return nil, errors.New("failed to connect after multiple attempts")
 	}
 	return peer, nil
+}
+
+func (hrm *HeartRateMonitor) connectCachedTarget(adapter *bluetooth.Adapter) (*bluetooth.Device, error, bool) {
+	hrm.mu.Lock()
+	mac := strings.TrimSpace(hrm.config.TargetDeviceMAC)
+	name := strings.TrimSpace(hrm.config.TargetDeviceName)
+	hrm.mu.Unlock()
+	if mac == "" || !devicePaired(mac) {
+		return nil, nil, false
+	}
+
+	addrMAC, err := bluetooth.ParseMAC(mac)
+	if err != nil {
+		log.Warnf("Cannot direct-connect cached target %q: %v", mac, err)
+		return nil, nil, false
+	}
+	addr := bluetooth.Address{MACAddress: bluetooth.MACAddress{MAC: addrMAC}}
+	display := name
+	if display == "" {
+		display = mac
+	}
+	log.Infof("Trying cached direct connect to %s (%s)...", display, mac)
+
+	for i := 0; i < hrm.reconnectAttempts; i++ {
+		if !hrm.desired.Load() {
+			return nil, errors.New("connect aborted"), true
+		}
+		p, err := adapter.Connect(addr, bluetooth.ConnectionParams{})
+		if err == nil {
+			hrm.lastDeviceAddr = mac
+			hrm.mu.Lock()
+			hrm.deviceName, hrm.deviceAddr = display, mac
+			hrm.connectedOK = true
+			hrm.seen[mac] = seenDevice{
+				name: display,
+				hr:   true,
+				at:   time.Now(),
+			}
+			hrm.mu.Unlock()
+			return &p, nil, true
+		}
+		log.Warnf("Cached direct connect attempt %d/%d failed: %v", i+1, hrm.reconnectAttempts, err)
+		time.Sleep(2 * time.Second)
+	}
+
+	hrm.mu.Lock()
+	hrm.connectedOK = false
+	hrm.mu.Unlock()
+	log.Warn("Cached direct connect failed; falling back to scan")
+	return nil, nil, false
 }
 
 // discoverServices discovers the heart rate service on the device.

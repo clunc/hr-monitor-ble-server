@@ -22,7 +22,10 @@ const (
 func main() {
 	logrus.SetFormatter(&logrus.TextFormatter{FullTimestamp: true})
 
-	targetMAC := getenvDefault("TARGET_MAC", "C9:9C:80:01:00:92")
+	targetMAC := strings.TrimSpace(os.Getenv("TARGET_MAC"))
+	if targetMAC == "" {
+		logrus.Fatal("TARGET_MAC is required")
+	}
 	targetName := getenvDefault("TARGET_NAME", "Polar H10")
 	scanTimeout := time.Duration(getenvIntDefault("SCAN_TIMEOUT_SECONDS", 30)) * time.Second
 

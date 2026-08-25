@@ -178,7 +178,7 @@ func (hrm *HeartRateMonitor) SourceLabel() string {
 	return hrm.sourceLabelLocked()
 }
 
-// slugify turns "Polar H10 D812C321" into "polar-h10-d812c321".
+// slugify turns display names into stable URL/source-safe labels.
 func slugify(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	s = strings.Map(func(r rune) rune {
@@ -484,6 +484,12 @@ func (hrm *HeartRateMonitor) monitor() {
 func (hrm *HeartRateMonitor) run() {
 	hrm.mu.Lock()
 	err := hrm.transition(Connecting)
+	if err == nil {
+		hrm.deviceName, hrm.deviceAddr = "", ""
+		hrm.connectedAt = time.Time{}
+		hrm.battery = 0
+		hrm.lastHR, hrm.lastHRAt = 0, time.Time{}
+	}
 	hrm.mu.Unlock()
 	if err != nil {
 		return // not in Disconnected state, skip
@@ -736,7 +742,8 @@ func (hrm *HeartRateMonitor) connectCachedTarget(adapter *bluetooth.Adapter) (*b
 	}
 	log.Infof("Trying cached direct connect to %s (%s)...", display, mac)
 
-	for i := 0; i < hrm.reconnectAttempts; i++ {
+	attempts := envInt("HR_CACHED_CONNECT_ATTEMPTS", 1)
+	for i := 0; i < attempts; i++ {
 		if !hrm.desired.Load() {
 			return nil, errors.New("connect aborted"), true
 		}
@@ -757,7 +764,7 @@ func (hrm *HeartRateMonitor) connectCachedTarget(adapter *bluetooth.Adapter) (*b
 			hrm.mu.Unlock()
 			return &p, nil, true
 		}
-		log.Warnf("Cached direct connect attempt %d/%d failed: %v", i+1, hrm.reconnectAttempts, err)
+		log.Warnf("Cached direct connect attempt %d/%d failed: %v", i+1, attempts, err)
 		_ = exec.Command("bluetoothctl", "disconnect", mac).Run()
 		time.Sleep(2 * time.Second)
 	}
@@ -1078,6 +1085,15 @@ func envDuration(key string, def time.Duration) time.Duration {
 	if v := os.Getenv(key); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			return time.Duration(n) * time.Second
+		}
+	}
+	return def
+}
+
+func envInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
 		}
 	}
 	return def

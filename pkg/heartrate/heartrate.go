@@ -628,6 +628,10 @@ func (hrm *HeartRateMonitor) scanAndConnect() (*bluetooth.Device, error) {
 		_ = exec.Command("bluetoothctl", "remove", hrm.lastDeviceAddr).Run()
 		time.Sleep(500 * time.Millisecond)
 	}
+	if !reached && disconnectConnectedUnpairedByName(hrm.config.TargetDeviceName) {
+		log.Infof("Cleared stale connected target before scan")
+		time.Sleep(500 * time.Millisecond)
+	}
 
 	_ = adapter.StopScan()
 

@@ -115,6 +115,42 @@ func pairedDeviceByName(name string) (addr string, display string, ok bool) {
 	return "", "", false
 }
 
+func disconnectConnectedUnpairedByName(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	bus, err := dbus.SystemBus()
+	if err != nil {
+		return false
+	}
+	var objs map[dbus.ObjectPath]map[string]map[string]dbus.Variant
+	if err := bus.Object("org.bluez", "/").Call(
+		"org.freedesktop.DBus.ObjectManager.GetManagedObjects", 0).Store(&objs); err != nil {
+		return false
+	}
+	disconnected := false
+	for path, ifaces := range objs {
+		dev, ok := ifaces["org.bluez.Device1"]
+		if !ok {
+			continue
+		}
+		connected, _ := dev["Connected"].Value().(bool)
+		paired, _ := dev["Paired"].Value().(bool)
+		if !connected || paired {
+			continue
+		}
+		n, _ := dev["Name"].Value().(string)
+		alias, _ := dev["Alias"].Value().(string)
+		if !strings.Contains(n, name) && !strings.Contains(alias, name) {
+			continue
+		}
+		call := bus.Object("org.bluez", path).Call("org.bluez.Device1.Disconnect", 0)
+		disconnected = call.Err == nil || disconnected
+	}
+	return disconnected
+}
+
 func listBluezAdapters() []string {
 	bus, err := dbus.SystemBus()
 	if err != nil {

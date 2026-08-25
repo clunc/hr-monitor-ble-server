@@ -262,6 +262,14 @@ func (hrm *HeartRateMonitor) Disconnect() {
 func (hrm *HeartRateMonitor) Status() Status {
 	hrm.mu.Lock()
 	defer hrm.mu.Unlock()
+	paired := hrm.deviceAddr != "" && devicePaired(hrm.deviceAddr)
+	if !paired && hrm.config.TargetDeviceMAC != "" {
+		paired = devicePaired(hrm.config.TargetDeviceMAC)
+	}
+	if !paired && hrm.config.TargetDeviceName != "" {
+		_, _, paired = pairedDeviceByName(hrm.config.TargetDeviceName)
+	}
+
 	st := Status{
 		State:     hrm.state.String(),
 		Source:    hrm.sourceLabelLocked(),
@@ -273,7 +281,7 @@ func (hrm *HeartRateMonitor) Status() Status {
 		Address:   hrm.deviceAddr,
 		LastHR:    hrm.lastHR,
 		Battery:   hrm.battery,
-		Paired:    hrm.deviceAddr != "" && devicePaired(hrm.deviceAddr),
+		Paired:    paired,
 		LastError: hrm.lastErr,
 	}
 	// Distinguish "hunting for it" from "found it, negotiating". Collapsing both

@@ -16,6 +16,7 @@ import (
 
 	"github.com/clunc/hr-monitor-ble-server/pkg/heartratepb"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"tinygo.org/x/bluetooth"
 )
@@ -609,6 +610,12 @@ func (hrm *HeartRateMonitor) scanAndConnect() (*bluetooth.Device, error) {
 	hrm.sessionLock.Lock()
 	defer hrm.sessionLock.Unlock()
 
+	unlock, err := acquireAdapterLock()
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+
 	adapter := hrm.ensureAdapter()
 
 	if err := adapter.Enable(); err != nil {
@@ -725,6 +732,29 @@ func (hrm *HeartRateMonitor) scanAndConnect() (*bluetooth.Device, error) {
 		return nil, errors.New("failed to connect after multiple attempts")
 	}
 	return peer, nil
+}
+
+func acquireAdapterLock() (func(), error) {
+	path := strings.TrimSpace(os.Getenv("HR_ADAPTER_LOCK_FILE"))
+	if path == "" {
+		return func() {}, nil
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o666)
+	if err != nil {
+		return nil, wrapError(err, "open adapter lock")
+	}
+	log.Infof("Waiting for BLE adapter lock %s", path)
+	if err := unix.Flock(int(file.Fd()), unix.LOCK_EX); err != nil {
+		file.Close()
+		return nil, wrapError(err, "acquire adapter lock")
+	}
+	log.Infof("Acquired BLE adapter lock %s", path)
+	return func() {
+		if err := unix.Flock(int(file.Fd()), unix.LOCK_UN); err != nil {
+			log.Warnf("Release BLE adapter lock: %v", err)
+		}
+		file.Close()
+	}, nil
 }
 
 func (hrm *HeartRateMonitor) connectCachedTarget(adapter *bluetooth.Adapter) (*bluetooth.Device, error, bool) {
